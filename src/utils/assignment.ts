@@ -20,24 +20,25 @@ function estimateTransitMinutes(distanceKm: number): number {
   return Math.round(distanceKm * 3);
 }
 
-type ScoredAssignment = {
+type CandidateScore = {
   driverId: string;
-  passengerIds: string[];
   meetingPoint: MeetingCandidate;
   score: number;
   driverDetourMinutes: number;
   driveDurationMinutes: number;
-  passengerAccessMinutes: Map<string, number>;
+  passengerAccessMinutes: number;
 };
 
-function scoreAssignment(
+function scoreCandidate(
   driver: Member,
-  passengers: Member[],
+  passenger: Member,
+  existingPassengerCount: number,
   meetingPoint: MeetingCandidate,
   destination: LatLng
-): ScoredAssignment {
+): CandidateScore {
   const driverLoc = driver.location!;
   const meetingLoc = meetingPoint.location;
+  const passengerLoc = passenger.location!;
 
   const driverToMeeting = haversineDistance(driverLoc, meetingLoc);
   const meetingToDest = haversineDistance(meetingLoc, destination);
@@ -47,26 +48,20 @@ function scoreAssignment(
   const driverDetourMinutes = estimateDrivingMinutes(Math.max(0, driverDetourKm));
   const driveDurationMinutes = estimateDrivingMinutes(driverToMeeting + meetingToDest);
 
-  const passengerAccessMinutes = new Map<string, number>();
-  let totalAccess = 0;
-  let maxAccess = 0;
+  const passengerDist = haversineDistance(passengerLoc, meetingLoc);
+  const passengerAccessMinutes = estimateTransitMinutes(passengerDist);
 
-  for (const p of passengers) {
-    const dist = haversineDistance(p.location!, meetingLoc);
-    const minutes = estimateTransitMinutes(dist);
-    passengerAccessMinutes.set(p.id, minutes);
-    totalAccess += minutes;
-    if (minutes > maxAccess) maxAccess = minutes;
-  }
+  const destBacktrack = haversineDistance(meetingLoc, destination) > driverDirect ? driverDetourMinutes : 0;
 
-  const avgAccess = passengers.length > 0 ? totalAccess / passengers.length : 0;
-  const destBacktrack = haversineDistance(meetingLoc, destination) > driverDirect ? driverDetourMinutes * 2 : 0;
+  const congestionPenalty = existingPassengerCount * 2;
 
-  const score = driverDetourMinutes * 3 + avgAccess * 2 + maxAccess * 1 + destBacktrack * 2;
+  const score = driverDetourMinutes * 3
+    + passengerAccessMinutes * 2
+    + destBacktrack * 2
+    + congestionPenalty;
 
   return {
     driverId: driver.id,
-    passengerIds: passengers.map(p => p.id),
     meetingPoint,
     score,
     driverDetourMinutes,
@@ -74,6 +69,15 @@ function scoreAssignment(
     passengerAccessMinutes,
   };
 }
+
+type AssignmentEntry = {
+  driverId: string;
+  passengerIds: string[];
+  meetingPoint: MeetingCandidate;
+  driverDetourMinutes: number;
+  driveDurationMinutes: number;
+  passengerAccessMinutes: Map<string, number>;
+};
 
 export async function calculateAssignment(
   members: Member[],
@@ -97,94 +101,77 @@ export async function calculateAssignment(
     };
   }
 
-  const totalCapacity = drivers.reduce((sum, d) => sum + (d.vehicleCapacity || 0), 0);
-  const shortage = Math.max(0, members.length - totalCapacity);
-
-  const driverCapacities = new Map<string, number>();
+  const assignments = new Map<string, AssignmentEntry>();
   for (const d of drivers) {
-    driverCapacities.set(d.id, (d.vehicleCapacity || 1) - 1);
+    assignments.set(d.id, {
+      driverId: d.id,
+      passengerIds: [],
+      meetingPoint: meetingCandidates[0],
+      driverDetourMinutes: 0,
+      driveDurationMinutes: 0,
+      passengerAccessMinutes: new Map(),
+    });
   }
 
-  const bestAssignments = new Map<string, ScoredAssignment>();
+  const unassigned: Member[] = [];
 
   for (const passenger of nonDrivers) {
-    let bestForPassenger: ScoredAssignment | null = null;
+    let best: CandidateScore | null = null;
+    let bestDriverId = '';
 
     for (const driver of drivers) {
-      const remaining = driverCapacities.get(driver.id) ?? 0;
-      if (remaining <= 0) continue;
+      const entry = assignments.get(driver.id)!;
+      const cap = (driver.vehicleCapacity || 1) - 1;
+      if (entry.passengerIds.length >= cap) continue;
 
       for (const mp of meetingCandidates) {
-        const currentPassengerIds = bestAssignments.get(driver.id)?.passengerIds ?? [];
-        const fakePassengers = currentPassengerIds
-          .map(id => members.find(m => m.id === id)!)
-          .filter(Boolean);
-        fakePassengers.push(passenger);
-
-        const scored = scoreAssignment(driver, fakePassengers, mp, destination);
-        if (!bestForPassenger || scored.score < bestForPassenger.score) {
-          bestForPassenger = scored;
+        const scored = scoreCandidate(driver, passenger, entry.passengerIds.length, mp, destination);
+        if (!best || scored.score < best.score) {
+          best = scored;
+          bestDriverId = driver.id;
         }
       }
     }
 
-    if (bestForPassenger) {
-      const existing = bestAssignments.get(bestForPassenger.driverId);
-      if (existing) {
-        existing.passengerIds.push(passenger.id);
-        existing.score += bestForPassenger.score;
-        existing.driverDetourMinutes = Math.max(existing.driverDetourMinutes, bestForPassenger.driverDetourMinutes);
-        const minutes = bestForPassenger.passengerAccessMinutes.get(passenger.id) ?? 0;
-        existing.passengerAccessMinutes.set(passenger.id, minutes);
-      } else {
-        bestAssignments.set(bestForPassenger.driverId, {
-          ...bestForPassenger,
-          passengerIds: [passenger.id],
-        });
-      }
+    if (best) {
+      const entry = assignments.get(bestDriverId)!;
+      entry.passengerIds.push(passenger.id);
+      entry.meetingPoint = best.meetingPoint;
+      entry.driverDetourMinutes = Math.max(entry.driverDetourMinutes, best.driverDetourMinutes);
+      entry.driveDurationMinutes = best.driveDurationMinutes;
+      entry.passengerAccessMinutes.set(passenger.id, best.passengerAccessMinutes);
+    } else {
+      unassigned.push(passenger);
     }
   }
 
-  const assignedIds = new Set<string>();
-  const vehiclePlansRaw: { driver: Member; assignment: ScoredAssignment }[] = [];
-
-  for (const driver of drivers) {
-    const assignment = bestAssignments.get(driver.id);
-      if (assignment && assignment.passengerIds.length > 0) {
-        const cap = driverCapacities.get(driver.id) ?? 0;
-        const kept = assignment.passengerIds.slice(0, cap);
-        assignment.passengerIds = kept;
-        vehiclePlansRaw.push({ driver, assignment });
-        kept.forEach(id => assignedIds.add(id));
-      }
-  }
-
-  const unassigned = nonDrivers.filter(m => !assignedIds.has(m.id));
-
   let realDurations: Map<string, number> | null = null;
-  if (useRealApi && meetingCandidates.length > 0) {
+  if (useRealApi) {
     try {
       const origins: LatLng[] = [];
-      const destinations: LatLng[] = [];
+      const dests: LatLng[] = [];
 
-      for (const { driver, assignment } of vehiclePlansRaw) {
+      for (const [, entry] of assignments) {
+        if (entry.passengerIds.length === 0) continue;
+        const driver = members.find(m => m.id === entry.driverId)!;
         origins.push(driver.location!);
-        destinations.push(assignment.meetingPoint.location);
-        origins.push(assignment.meetingPoint.location);
-        destinations.push(destination);
+        dests.push(entry.meetingPoint.location);
+        origins.push(entry.meetingPoint.location);
+        dests.push(destination);
       }
 
       if (origins.length > 0) {
-        const matrix = await getDistanceMatrix(origins, destinations);
+        const matrix = await getDistanceMatrix(origins, dests);
         realDurations = new Map();
         let idx = 0;
-        for (const { assignment } of vehiclePlansRaw) {
-          const driverToMeeting = matrix[idx]?.[idx]?.durationMinutes ?? -1;
+        for (const [, entry] of assignments) {
+          if (entry.passengerIds.length === 0) continue;
+          const toMeeting = matrix[idx]?.[idx]?.durationMinutes ?? -1;
           idx++;
-          const meetingToDest = matrix[idx]?.[idx]?.durationMinutes ?? -1;
+          const toDest = matrix[idx]?.[idx]?.durationMinutes ?? -1;
           idx++;
-          if (driverToMeeting >= 0 && meetingToDest >= 0) {
-            realDurations.set(assignment.driverId, driverToMeeting + meetingToDest);
+          if (toMeeting >= 0 && toDest >= 0) {
+            realDurations.set(entry.driverId, toMeeting + toDest);
           }
         }
       }
@@ -193,25 +180,27 @@ export async function calculateAssignment(
     }
   }
 
-  const vehiclePlans: VehiclePlan[] = vehiclePlansRaw.map(({ driver, assignment }) => {
-    const duration = realDurations?.get(assignment.driverId) ?? assignment.driveDurationMinutes;
-    const googleMapsUrl = buildGoogleMapsDirectionsUrl(assignment.meetingPoint.location, destination);
+  const vehiclePlans: VehiclePlan[] = [];
+  for (const [, entry] of assignments) {
+    if (entry.passengerIds.length === 0) continue;
+    const duration = realDurations?.get(entry.driverId) ?? entry.driveDurationMinutes;
+    const googleMapsUrl = buildGoogleMapsDirectionsUrl(entry.meetingPoint.location, destination);
 
-    return {
-      vehicleId: driver.id,
-      driverId: driver.id,
-      passengerIds: assignment.passengerIds,
-      meetingPoint: assignment.meetingPoint,
+    vehiclePlans.push({
+      vehicleId: entry.driverId,
+      driverId: entry.driverId,
+      passengerIds: entry.passengerIds,
+      meetingPoint: entry.meetingPoint,
       driveDurationMinutes: duration,
-      driverDetourMinutes: assignment.driverDetourMinutes,
-      passengerAccess: assignment.passengerIds.map(pid => ({
+      driverDetourMinutes: entry.driverDetourMinutes,
+      passengerAccess: entry.passengerIds.map(pid => ({
         memberId: pid,
         mode: 'transit' as const,
-        durationMinutes: assignment.passengerAccessMinutes.get(pid),
+        durationMinutes: entry.passengerAccessMinutes.get(pid),
       })),
       googleMapsUrl,
-    };
-  });
+    });
+  }
 
   const transitOnlyPlans: TransitOnlyPlan[] = unassigned.map(member => ({
     memberId: member.id,
@@ -220,6 +209,8 @@ export async function calculateAssignment(
   }));
 
   const warnings: string[] = [];
+  const totalCapacity = drivers.reduce((sum, d) => sum + (d.vehicleCapacity || 0), 0);
+  const shortage = Math.max(0, members.length - totalCapacity);
   if (shortage > 0) {
     warnings.push(`席が${shortage}席不足しています。`);
   }

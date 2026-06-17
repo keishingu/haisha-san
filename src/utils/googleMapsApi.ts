@@ -85,7 +85,7 @@ export type PlacesSearchResult = {
 
 export async function searchNearbyPlaces(
   center: LatLng,
-  radiusMeters: number,
+  _radiusMeters: number,
   type: string,
   keyword?: string
 ): Promise<PlacesSearchResult[]> {
@@ -95,7 +95,7 @@ export async function searchNearbyPlaces(
 
   const params = new URLSearchParams({
     location: `${center.lat},${center.lng}`,
-    radius: radiusMeters.toString(),
+    rankby: 'distance',
     type,
     key: API_KEY!,
     language: 'ja',
