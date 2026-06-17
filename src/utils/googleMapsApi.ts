@@ -20,7 +20,7 @@ export function loadMapsApi(): Promise<void> {
     }
 
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&libraries=places&language=ja`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&libraries=places&language=ja&loading=async`;
     script.async = true;
     script.onload = () => { mapsApiLoaded = true; resolve(); };
     script.onerror = () => reject(new Error('Google Maps APIの読み込みに失敗しました'));
@@ -151,17 +151,25 @@ export async function searchMeetingCandidates(center: LatLng): Promise<MeetingCa
     }
   };
 
-  // 1. rankby=distance で近い順に検索（半径制限なし）
-  const distanceSearches = [
-    { type: 'train_station' },
-    { type: 'transit_station' },
-    { type: 'parking' },
+  const haversineKm = (a: LatLng, b: LatLng) => {
+    const R = 6371;
+    const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+    const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  };
+
+  // radius指定で検索（rankby=distance はCORS制限があるため使えない）
+  const searches = [
+    { type: 'train_station', radius: 15000 },
+    { type: 'transit_station', radius: 15000 },
+    { type: 'parking', radius: 8000 },
   ];
 
-  for (const search of distanceSearches) {
+  for (const search of searches) {
     const params = new URLSearchParams({
       location: `${center.lat},${center.lng}`,
-      rankby: 'distance',
+      radius: search.radius.toString(),
       type: search.type,
       key: API_KEY!,
       language: 'ja',
@@ -170,26 +178,8 @@ export async function searchMeetingCandidates(center: LatLng): Promise<MeetingCa
     addResults(places, search.type);
   }
 
-  // 2. まだ少なければ半径指定で追加検索
-  if (results.length < 3) {
-    const radiusSearches = [
-      { type: 'train_station', radius: 10000 },
-      { type: 'transit_station', radius: 10000 },
-      { type: 'parking', radius: 5000 },
-    ];
-
-    for (const search of radiusSearches) {
-      const params = new URLSearchParams({
-        location: `${center.lat},${center.lng}`,
-        radius: search.radius.toString(),
-        type: search.type,
-        key: API_KEY!,
-        language: 'ja',
-      });
-      const places = await fetchPlaces(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params}`);
-      addResults(places, search.type);
-    }
-  }
+  // 距離順にソート
+  results.sort((a, b) => haversineKm(center, a.location) - haversineKm(center, b.location));
 
   return results;
 }
