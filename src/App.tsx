@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Member, Destination, PlanResult, SharePlanPayload, LatLng } from './types';
-import { getSampleMembers, getSampleDestination, getSampleMeetingCandidates } from './utils/sampleData';
+import { getSampleMembers, getSampleDestination } from './utils/sampleData';
 import { validateInputs } from './utils/validation';
 import { calculateAssignment } from './utils/assignment';
 import { buildShareUrl, parseSharePayload } from './utils/shareUrl';
 import { generateShareText } from './utils/shareText';
 import { isApiKeyConfigured, geocodeAddress, searchMeetingCandidates } from './utils/googleMapsApi';
+import AutocompleteInput from './components/AutocompleteInput';
 import './index.css';
 
 type Page = 'input' | 'result' | 'share';
@@ -37,19 +38,29 @@ function App() {
     setValidationResult(validation);
     if (!validation.isValid) return;
 
+    if (!isApiKeyConfigured()) {
+      setCalcError('Google Maps APIキーが設定されていません。\n.env に VITE_GOOGLE_MAPS_API_KEY を設定してください。');
+      return;
+    }
+
     setCalculating(true);
     try {
+      // 目的地のジオコーディング（autocompleteで既に取得済みならスキップ可能）
       let destLocation: LatLng;
-      let memberLocations: Map<string, LatLng>;
-      let meetingCandidates;
-
-      if (isApiKeyConfigured()) {
+      if (destination.location) {
+        destLocation = destination.location;
+      } else {
         const destResult = await geocodeAddress(destination.addressInput);
         destLocation = destResult.location;
+      }
 
-        memberLocations = new Map();
-        const geocodeErrors: string[] = [];
-        for (const m of members) {
+      // メンバーのジオコーディング
+      const memberLocations = new Map<string, LatLng>();
+      const geocodeErrors: string[] = [];
+      for (const m of members) {
+        if (m.location) {
+          memberLocations.set(m.id, m.location);
+        } else {
           try {
             const result = await geocodeAddress(m.addressInput);
             memberLocations.set(m.id, result.location);
@@ -57,44 +68,32 @@ function App() {
             geocodeErrors.push(e instanceof Error ? e.message : `${m.name}の住所を特定できませんでした。`);
           }
         }
-        if (geocodeErrors.length > 0) {
-          setCalcError(geocodeErrors.join('\n'));
-          setCalculating(false);
-          return;
-        }
+      }
+      if (geocodeErrors.length > 0) {
+        setCalcError(geocodeErrors.join('\n'));
+        setCalculating(false);
+        return;
+      }
 
-        const nonDriverLocs = members.filter(m => !m.isDriver && memberLocations.has(m.id)).map(m => memberLocations.get(m.id)!);
-        const searchCenter = nonDriverLocs.length > 0
-          ? { lat: nonDriverLocs.reduce((s, p) => s + p.lat, 0) / nonDriverLocs.length, lng: nonDriverLocs.reduce((s, p) => s + p.lng, 0) / nonDriverLocs.length }
-          : destLocation;
+      // 集合地点候補の検索
+      const nonDriverLocs = members.filter(m => !m.isDriver && memberLocations.has(m.id)).map(m => memberLocations.get(m.id)!);
+      const searchCenter = nonDriverLocs.length > 0
+        ? { lat: nonDriverLocs.reduce((s, p) => s + p.lat, 0) / nonDriverLocs.length, lng: nonDriverLocs.reduce((s, p) => s + p.lng, 0) / nonDriverLocs.length }
+        : destLocation;
 
-        meetingCandidates = await searchMeetingCandidates(searchCenter);
-        if (meetingCandidates.length === 0) {
-          meetingCandidates = getSampleMeetingCandidates();
-        }
-      } else {
-        const sampleDest = getSampleDestination();
-        destLocation = sampleDest.location!;
-
-        memberLocations = new Map();
-        const sampleMembers = getSampleMembers();
-        for (const m of members) {
-          const sampleMatch = sampleMembers.find(s => s.addressInput === m.addressInput);
-          if (sampleMatch?.location) {
-            memberLocations.set(m.id, sampleMatch.location);
-          } else {
-            memberLocations.set(m.id, { lat: 35.6812 + Math.random() * 0.1, lng: 139.7671 + Math.random() * 0.1 });
-          }
-        }
-        meetingCandidates = getSampleMeetingCandidates();
+      const meetingCandidates = await searchMeetingCandidates(searchCenter);
+      if (meetingCandidates.length === 0) {
+        setCalcError('集合地点候補が見つかりませんでした。メンバーの住所を確認してください。');
+        setCalculating(false);
+        return;
       }
 
       const membersWithLocations = members.map(m => ({
         ...m,
-        location: memberLocations.get(m.id) || m.location,
+        location: memberLocations.get(m.id)!,
       }));
 
-      const result = await calculateAssignment(membersWithLocations, destLocation, meetingCandidates, isApiKeyConfigured());
+      const result = await calculateAssignment(membersWithLocations, destLocation, meetingCandidates, true);
       setPlanResult(result);
       setShareText(generateShareText(membersWithLocations, destination.addressInput, result));
       setPage('result');
@@ -316,18 +315,18 @@ function App() {
             住所は候補検索と移動時間計算のためGoogle Maps Platformへ送信されます。
           </p>
           {!isApiKeyConfigured() && (
-            <p className="text-yellow-700 text-sm mt-2 font-medium">
-              ※ Google Maps APIキーが未設定のため、サンプルデータで動作します。実際の住所計算には .env に VITE_GOOGLE_MAPS_API_KEY を設定してください。
+            <p className="text-red-700 text-sm mt-2 font-medium">
+              ※ Google Maps APIキーが未設定です。計算を実行するには .env に VITE_GOOGLE_MAPS_API_KEY を設定してください。
             </p>
           )}
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-4 mb-4">
           <h2 className="text-lg font-semibold text-gray-700 mb-2">目的地</h2>
-          <input
-            type="text"
+          <AutocompleteInput
             value={destination.addressInput}
-            onChange={(e) => setDestination({ ...destination, addressInput: e.target.value })}
+            onChange={(val) => setDestination({ ...destination, addressInput: val })}
+            onPlaceSelect={(location) => setDestination({ addressInput: destination.addressInput, location })}
             placeholder="例: 河口湖キャンプ場"
             className="w-full p-2 border border-gray-300 rounded"
           />
@@ -352,7 +351,13 @@ function App() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <input type="text" value={member.name} onChange={(e) => { const n = [...members]; n[index] = { ...member, name: e.target.value }; setMembers(n); }} placeholder="名前" className="p-2 border border-gray-300 rounded" />
-                <input type="text" value={member.addressInput} onChange={(e) => { const n = [...members]; n[index] = { ...member, addressInput: e.target.value }; setMembers(n); }} placeholder="例: 東京都新宿区西新宿1丁目" className="p-2 border border-gray-300 rounded" />
+                <AutocompleteInput
+                  value={member.addressInput}
+                  onChange={(val) => { const n = [...members]; n[index] = { ...member, addressInput: val }; setMembers(n); }}
+                  onPlaceSelect={(location) => { const n = [...members]; n[index] = { ...member, location }; setMembers(n); }}
+                  placeholder="例: 東京都新宿区西新宿1丁目"
+                  className="p-2 border border-gray-300 rounded"
+                />
               </div>
               <div className="mt-2 flex items-center gap-4 flex-wrap">
                 <label className="flex items-center gap-2">

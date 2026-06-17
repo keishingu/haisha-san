@@ -6,6 +6,30 @@ export function isApiKeyConfigured(): boolean {
   return !!API_KEY && API_KEY.length > 0;
 }
 
+let mapsApiLoaded = false;
+let mapsApiLoading: Promise<void> | null = null;
+
+export function loadMapsApi(): Promise<void> {
+  if (mapsApiLoaded) return Promise.resolve();
+  if (mapsApiLoading) return mapsApiLoading;
+
+  mapsApiLoading = new Promise<void>((resolve, reject) => {
+    if (!isApiKeyConfigured()) {
+      reject(new Error('APIキー未設定'));
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&libraries=places&language=ja`;
+    script.async = true;
+    script.onload = () => { mapsApiLoaded = true; resolve(); };
+    script.onerror = () => reject(new Error('Google Maps APIの読み込みに失敗しました'));
+    document.head.appendChild(script);
+  });
+
+  return mapsApiLoading;
+}
+
 export type GeocodingResult = {
   address: string;
   location: LatLng;
@@ -76,54 +100,18 @@ export async function getDistanceMatrix(
   );
 }
 
-export type PlacesSearchResult = {
+type PlaceResult = {
   name: string;
-  address: string;
-  location: LatLng;
-  placeType: MeetingCandidate['placeType'];
+  vicinity?: string;
+  geometry: { location: { lat: number; lng: number } };
 };
 
-export async function searchNearbyPlaces(
-  center: LatLng,
-  _radiusMeters: number,
-  type: string,
-  keyword?: string
-): Promise<PlacesSearchResult[]> {
-  if (!isApiKeyConfigured()) {
-    throw new Error('Google Maps APIキーが設定されていません。');
-  }
-
-  const params = new URLSearchParams({
-    location: `${center.lat},${center.lng}`,
-    rankby: 'distance',
-    type,
-    key: API_KEY!,
-    language: 'ja',
-  });
-  if (keyword) {
-    params.set('keyword', keyword);
-  }
-
-  const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
+async function fetchPlaces(url: string): Promise<PlaceResult[]> {
   const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Places APIエラー: ${res.status}`);
-  }
-
+  if (!res.ok) return [];
   const data = await res.json();
-  if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-    throw new Error('集合地点を検索できませんでした。');
-  }
-
-  return (data.results || []).map((place: { name: string; vicinity?: string; geometry: { location: { lat: number; lng: number } } }) => ({
-    name: place.name,
-    address: place.vicinity || '',
-    location: {
-      lat: place.geometry.location.lat,
-      lng: place.geometry.location.lng,
-    },
-    placeType: mapPlaceType(type),
-  }));
+  if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') return [];
+  return data.results || [];
 }
 
 function mapPlaceType(googleType: string): MeetingCandidate['placeType'] {
@@ -144,31 +132,62 @@ export async function searchMeetingCandidates(center: LatLng): Promise<MeetingCa
   const results: MeetingCandidate[] = [];
   const seen = new Set<string>();
 
-  const searches = [
-    { type: 'train_station', radius: 3000 },
-    { type: 'transit_station', radius: 3000 },
-    { type: 'parking', radius: 2000 },
-    { type: 'convenience_store', keyword: 'セブン-イレブン', radius: 1500 },
+  const addResults = (places: PlaceResult[], type: string) => {
+    for (const place of places) {
+      const key = `${place.geometry.location.lat.toFixed(4)},${place.geometry.location.lng.toFixed(4)}`;
+      if (!seen.has(key) && results.length < 10) {
+        seen.add(key);
+        results.push({
+          id: `place-${results.length}`,
+          name: place.name,
+          address: place.vicinity || '',
+          location: {
+            lat: place.geometry.location.lat,
+            lng: place.geometry.location.lng,
+          },
+          placeType: mapPlaceType(type),
+        });
+      }
+    }
+  };
+
+  // 1. rankby=distance で近い順に検索（半径制限なし）
+  const distanceSearches = [
+    { type: 'train_station' },
+    { type: 'transit_station' },
+    { type: 'parking' },
   ];
 
-  for (const search of searches) {
-    try {
-      const places = await searchNearbyPlaces(center, search.radius, search.type, search.keyword);
-      for (const place of places) {
-        const key = `${place.location.lat.toFixed(4)},${place.location.lng.toFixed(4)}`;
-        if (!seen.has(key) && results.length < 10) {
-          seen.add(key);
-          results.push({
-            id: `place-${results.length}`,
-            name: place.name,
-            address: place.address,
-            location: place.location,
-            placeType: place.placeType,
-          });
-        }
-      }
-    } catch {
-      // 個別の検索が失敗しても続行
+  for (const search of distanceSearches) {
+    const params = new URLSearchParams({
+      location: `${center.lat},${center.lng}`,
+      rankby: 'distance',
+      type: search.type,
+      key: API_KEY!,
+      language: 'ja',
+    });
+    const places = await fetchPlaces(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params}`);
+    addResults(places, search.type);
+  }
+
+  // 2. まだ少なければ半径指定で追加検索
+  if (results.length < 3) {
+    const radiusSearches = [
+      { type: 'train_station', radius: 10000 },
+      { type: 'transit_station', radius: 10000 },
+      { type: 'parking', radius: 5000 },
+    ];
+
+    for (const search of radiusSearches) {
+      const params = new URLSearchParams({
+        location: `${center.lat},${center.lng}`,
+        radius: search.radius.toString(),
+        type: search.type,
+        key: API_KEY!,
+        language: 'ja',
+      });
+      const places = await fetchPlaces(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params}`);
+      addResults(places, search.type);
     }
   }
 
