@@ -37,29 +37,21 @@ export type GeocodingResult = {
 };
 
 export async function geocodeAddress(address: string): Promise<GeocodingResult> {
-  if (!isApiKeyConfigured()) {
-    throw new Error('Google Maps APIキーが設定されていません。');
-  }
-
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${API_KEY}&language=ja`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Geocoding APIエラー: ${res.status}`);
-  }
+  const res = await fetch('/api/geocode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address }),
+  });
 
   const data = await res.json();
-  if (data.status !== 'OK' || !data.results?.length) {
-    throw new Error(`住所「${address}」を特定できませんでした。市区町村や番地を追加してください。`);
+  if (!res.ok) {
+    throw new Error(data.error || '住所の特定に失敗しました。');
   }
 
-  const result = data.results[0];
   return {
     address,
-    location: {
-      lat: result.geometry.location.lat,
-      lng: result.geometry.location.lng,
-    },
-    formattedAddress: result.formatted_address,
+    location: data.location,
+    formattedAddress: data.formattedAddress,
   };
 }
 
@@ -73,45 +65,24 @@ export async function getDistanceMatrix(
   origins: LatLng[],
   destinations: LatLng[]
 ): Promise<DistanceMatrixResult[][]> {
-  if (!isApiKeyConfigured()) {
-    throw new Error('Google Maps APIキーが設定されていません。');
-  }
-
-  const originsStr = origins.map(o => `${o.lat},${o.lng}`).join('|');
-  const destinationsStr = destinations.map(d => `${d.lat},${d.lng}`).join('|');
-
-  const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${originsStr}&destinations=${destinationsStr}&key=${API_KEY}&language=ja`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Distance Matrix APIエラー: ${res.status}`);
-  }
+  const res = await fetch('/api/distance-matrix', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ origins, destinations }),
+  });
 
   const data = await res.json();
-  if (data.status !== 'OK') {
-    throw new Error('移動時間を取得できませんでした。');
+  if (!res.ok) {
+    throw new Error(data.error || '移動時間の取得に失敗しました。');
   }
 
-  return data.rows.map((row: { elements: { status: string; duration?: { value: number }; distance?: { value: number } }[] }) =>
-    row.elements.map((elem) => ({
-      durationMinutes: elem.status === 'OK' ? Math.round((elem.duration?.value ?? 0) / 60) : -1,
-      distanceMeters: elem.distance?.value ?? 0,
+  return data.rows.map((row: { durationMinutes: number; distanceMeters: number; status: string }[]) =>
+    row.map((elem) => ({
+      durationMinutes: elem.status === 'OK' ? elem.durationMinutes : -1,
+      distanceMeters: elem.distanceMeters,
       status: elem.status === 'OK' ? 'OK' as const : 'error' as const,
     }))
   );
-}
-
-type PlaceResult = {
-  name: string;
-  vicinity?: string;
-  geometry: { location: { lat: number; lng: number } };
-};
-
-async function fetchPlaces(url: string): Promise<PlaceResult[]> {
-  const res = await fetch(url);
-  if (!res.ok) return [];
-  const data = await res.json();
-  if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') return [];
-  return data.results || [];
 }
 
 function mapPlaceType(googleType: string): MeetingCandidate['placeType'] {
@@ -128,29 +99,30 @@ function mapPlaceType(googleType: string): MeetingCandidate['placeType'] {
   }
 }
 
+async function nearbySearch(
+  center: LatLng,
+  radius: number,
+  type: string
+): Promise<MeetingCandidate[]> {
+  const res = await fetch('/api/places-nearby', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lat: center.lat, lng: center.lng, radius, type }),
+  });
+
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  return (data.results || []).map((r: { name: string; address: string; location: LatLng }, i: number) => ({
+    id: `place-${type}-${i}`,
+    name: r.name,
+    address: r.address,
+    location: r.location,
+    placeType: mapPlaceType(type),
+  }));
+}
+
 export async function searchMeetingCandidates(center: LatLng): Promise<MeetingCandidate[]> {
-  const results: MeetingCandidate[] = [];
-  const seen = new Set<string>();
-
-  const addResults = (places: PlaceResult[], type: string) => {
-    for (const place of places) {
-      const key = `${place.geometry.location.lat.toFixed(4)},${place.geometry.location.lng.toFixed(4)}`;
-      if (!seen.has(key) && results.length < 10) {
-        seen.add(key);
-        results.push({
-          id: `place-${results.length}`,
-          name: place.name,
-          address: place.vicinity || '',
-          location: {
-            lat: place.geometry.location.lat,
-            lng: place.geometry.location.lng,
-          },
-          placeType: mapPlaceType(type),
-        });
-      }
-    }
-  };
-
   const haversineKm = (a: LatLng, b: LatLng) => {
     const R = 6371;
     const dLat = ((b.lat - a.lat) * Math.PI) / 180;
@@ -159,27 +131,27 @@ export async function searchMeetingCandidates(center: LatLng): Promise<MeetingCa
     return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
   };
 
-  // radius指定で検索（rankby=distance はCORS制限があるため使えない）
   const searches = [
     { type: 'train_station', radius: 15000 },
     { type: 'transit_station', radius: 15000 },
     { type: 'parking', radius: 8000 },
   ];
 
+  const allResults: MeetingCandidate[] = [];
+  const seen = new Set<string>();
+
   for (const search of searches) {
-    const params = new URLSearchParams({
-      location: `${center.lat},${center.lng}`,
-      radius: search.radius.toString(),
-      type: search.type,
-      key: API_KEY!,
-      language: 'ja',
-    });
-    const places = await fetchPlaces(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params}`);
-    addResults(places, search.type);
+    const results = await nearbySearch(center, search.radius, search.type);
+    for (const r of results) {
+      const key = `${r.location.lat.toFixed(4)},${r.location.lng.toFixed(4)}`;
+      if (!seen.has(key) && allResults.length < 10) {
+        seen.add(key);
+        allResults.push(r);
+      }
+    }
   }
 
-  // 距離順にソート
-  results.sort((a, b) => haversineKm(center, a.location) - haversineKm(center, b.location));
+  allResults.sort((a, b) => haversineKm(center, a.location) - haversineKm(center, b.location));
 
-  return results;
+  return allResults;
 }
