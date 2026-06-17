@@ -27,6 +27,14 @@ function App() {
   const [calculating, setCalculating] = useState(false);
   const [calcError, setCalcError] = useState<string | null>(null);
 
+  const updateMember = (id: string, patch: Partial<Member>) => {
+    setMembers(prev => prev.map(m => m.id === id ? { ...m, ...patch } : m));
+  };
+
+  const removeMember = (id: string) => {
+    setMembers(prev => prev.filter(m => m.id !== id));
+  };
+
   const loadSampleData = () => {
     setMembers(getSampleMembers());
     setDestination(getSampleDestination());
@@ -325,8 +333,8 @@ function App() {
           <h2 className="text-lg font-semibold text-gray-700 mb-2">目的地</h2>
           <AutocompleteInput
             value={destination.addressInput}
-            onChange={(val) => setDestination({ ...destination, addressInput: val })}
-            onPlaceSelect={(location) => setDestination({ addressInput: destination.addressInput, location })}
+            onChange={(val) => setDestination({ addressInput: val, location: undefined })}
+            onPlaceSelect={(location, addr) => setDestination({ addressInput: addr, location })}
             placeholder="例: 河口湖キャンプ場"
             className="w-full p-2 border border-gray-300 rounded"
           />
@@ -343,31 +351,48 @@ function App() {
             </button>
           </div>
 
-          {members.map((member, index) => (
+          {members.map((member) => (
             <div key={member.id} className="border border-gray-200 rounded p-3 mb-3 last:mb-0">
               <div className="flex justify-between items-center mb-2">
-                <span className="font-medium text-gray-700">メンバー {index + 1}</span>
-                <button onClick={() => setMembers(members.filter(m => m.id !== member.id))} className="text-red-600 hover:text-red-800 text-sm">削除</button>
+                <span className="font-medium text-gray-700">メンバー</span>
+                <button onClick={() => removeMember(member.id)} className="text-red-600 hover:text-red-800 text-sm">削除</button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <input type="text" value={member.name} onChange={(e) => { const n = [...members]; n[index] = { ...member, name: e.target.value }; setMembers(n); }} placeholder="名前" className="p-2 border border-gray-300 rounded" />
+                <input
+                  type="text"
+                  value={member.name}
+                  onChange={(e) => updateMember(member.id, { name: e.target.value })}
+                  placeholder="名前"
+                  className="p-2 border border-gray-300 rounded"
+                />
                 <AutocompleteInput
                   value={member.addressInput}
-                  onChange={(val) => { const n = [...members]; n[index] = { ...member, addressInput: val }; setMembers(n); }}
-                  onPlaceSelect={(location) => { const n = [...members]; n[index] = { ...member, location }; setMembers(n); }}
+                  onChange={(val) => updateMember(member.id, { addressInput: val })}
+                  onPlaceSelect={(location, addr) => updateMember(member.id, { addressInput: addr, location })}
                   placeholder="例: 東京都新宿区西新宿1丁目"
                   className="p-2 border border-gray-300 rounded"
                 />
               </div>
               <div className="mt-2 flex items-center gap-4 flex-wrap">
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={member.isDriver} onChange={(e) => { const n = [...members]; n[index] = { ...member, isDriver: e.target.checked }; setMembers(n); }} className="rounded" />
+                  <input
+                    type="checkbox"
+                    checked={member.isDriver}
+                    onChange={(e) => updateMember(member.id, { isDriver: e.target.checked })}
+                    className="rounded"
+                  />
                   <span className="text-sm text-gray-700">車あり</span>
                 </label>
                 {member.isDriver && (
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-700">定員:</span>
-                    <input type="number" min="1" value={member.vehicleCapacity || ''} onChange={(e) => { const n = [...members]; n[index] = { ...member, vehicleCapacity: parseInt(e.target.value) || undefined }; setMembers(n); }} className="w-16 p-1 border border-gray-300 rounded text-center" />
+                    <input
+                      type="number"
+                      min="1"
+                      value={member.vehicleCapacity || ''}
+                      onChange={(e) => updateMember(member.id, { vehicleCapacity: parseInt(e.target.value) || undefined })}
+                      className="w-16 p-1 border border-gray-300 rounded text-center"
+                    />
                     <span className="text-sm text-gray-500">人（含むドライバー）</span>
                   </div>
                 )}
