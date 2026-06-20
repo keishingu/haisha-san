@@ -10,6 +10,7 @@ import {
 export type BuildPlanResult = {
   result: PlanResult;
   resolvedMembers: Member[]; // location 解決済み（ブラウザメモリ上のみ）
+  destinationLocation: LatLng; // 解決済み目的地座標（ブラウザメモリ上のみ）
   mode: 'live' | 'sample';
 };
 
@@ -90,5 +91,5 @@ export async function buildPlan(members: Member[], destination: Destination): Pr
 
   const result = await calculateAssignment(resolvedMembers, destLocation, candidates, live);
 
-  return { result, resolvedMembers, mode: live ? 'live' : 'sample' };
+  return { result, resolvedMembers, destinationLocation: destLocation, mode: live ? 'live' : 'sample' };
 }

@@ -44,7 +44,7 @@ describe('プライバシー: 共有テキスト', () => {
 
 describe('プライバシー: 共有ペイロード', () => {
   it('共有ペイロードに出発地住所と自宅緯度経度が含まれないこと', () => {
-    const payload = buildSharePayload(members, '河口湖キャンプ場', planResult, 'メモ');
+    const payload = buildSharePayload(members, '河口湖キャンプ場', planResult, { lat: 35.4786, lng: 138.7531 }, 'メモ');
     const json = JSON.stringify(payload);
     expect(json).not.toContain('西新宿1丁目');
     expect(json).not.toContain('35.6938');
@@ -66,7 +66,7 @@ describe('プライバシー: ストレージ非保存', () => {
 
   it('共有テキスト・ペイロード・URL生成でLocalStorage/SessionStorageに何も保存しないこと', () => {
     generateShareText(members, '河口湖キャンプ場', planResult);
-    const payload = buildSharePayload(members, '河口湖キャンプ場', planResult);
+    const payload = buildSharePayload(members, '河口湖キャンプ場', planResult, { lat: 35.4786, lng: 138.7531 });
     buildShareUrl(payload);
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);

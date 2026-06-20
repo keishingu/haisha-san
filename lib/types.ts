@@ -32,7 +32,7 @@ export type VehiclePlan = {
   vehicleId: VehicleId;
   driverId: MemberId;
   passengerIds: MemberId[];
-  meetingPoint: MeetingCandidate;
+  meetingPoint?: MeetingCandidate; // 同乗者がいない車（自宅から直行）は未設定
   driveDurationMinutes: number;
   driverDetourMinutes: number;
   passengerAccess: PassengerAccess[];
@@ -70,8 +70,8 @@ export type SharePlanPayload = {
 export type SharedVehiclePlan = {
   driverName: string;
   passengerNames: string[];
-  meetingPointName: string;
-  meetingPointMapsUrl: string;
+  meetingPointName?: string; // 同乗者がいない車では未設定
+  meetingPointMapsUrl?: string; // 同乗者がいない車では未設定
   destinationMapsUrl: string;
   driveDurationText?: string;
 };

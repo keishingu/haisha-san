@@ -76,6 +76,28 @@ describe('calculateAssignment', () => {
     }
   });
 
+  it('同乗者0人のドライバーもソロ車として表示されること（車が消えない）', async () => {
+    const members: Member[] = [
+      { id: '1', name: '田中', addressInput: '東京都新宿区', location: { lat: 35.6938, lng: 139.7034 }, isDriver: true, vehicleCapacity: 4 },
+      { id: '2', name: '佐藤', addressInput: '東京都世田谷区', location: { lat: 35.6462, lng: 139.6527 }, isDriver: true, vehicleCapacity: 4 },
+      { id: '3', name: '鈴木', addressInput: '東京都中野区', location: { lat: 35.7077, lng: 139.6639 }, isDriver: true, vehicleCapacity: 4 },
+      { id: '4', name: '高橋', addressInput: '東京都杉並区', location: { lat: 35.6994, lng: 139.6367 }, isDriver: false },
+    ];
+
+    const result = await calculateAssignment(members, destination, meetingCandidates);
+
+    // ドライバー3人 → 車は3台すべて表示される（同乗者がいない車も含む）
+    expect(result.vehiclePlans).toHaveLength(3);
+    const solo = result.vehiclePlans.filter((vp) => vp.passengerIds.length === 0);
+    expect(solo.length).toBeGreaterThanOrEqual(2);
+    // ソロ車は集合地点なし・直行リンクを持つ
+    for (const vp of solo) {
+      expect(vp.meetingPoint).toBeUndefined();
+      expect(vp.googleMapsUrl).toContain('https://www.google.com/maps/dir/');
+    }
+    expect(result.transitOnlyPlans).toHaveLength(0);
+  });
+
   it('Google Mapsリンクが生成されること', async () => {
     const members: Member[] = [
       { id: '1', name: '田中', addressInput: '東京都新宿区', location: { lat: 35.6938, lng: 139.7034 }, isDriver: true, vehicleCapacity: 2 },

@@ -53,12 +53,13 @@ export default function HomePage() {
 
     setCalculating(true);
     try {
-      const { result, resolvedMembers } = await buildPlan(members, destination);
+      const { result, resolvedMembers, destinationLocation } = await buildPlan(members, destination);
       setPlan({
         planResult: result,
         // 氏名のみを結果表示用に保持。住所/緯度経度は保持しない。
         resultMembers: resolvedMembers.map((m) => ({ ...m, addressInput: '', location: undefined })),
         destinationLabel: destination.addressInput,
+        destinationLocation,
         shareText: generateShareText(resolvedMembers, destination.addressInput, result),
       });
       router.push('/result');

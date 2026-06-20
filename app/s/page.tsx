@@ -73,7 +73,8 @@ export default function SharePage() {
               <span className="font-medium">乗車:</span> {[vp.driverName, ...vp.passengerNames].join(', ')}
             </div>
             <div className="mb-2">
-              <span className="font-medium">集合地点:</span> {vp.meetingPointName}
+              <span className="font-medium">集合地点:</span>{' '}
+              {vp.meetingPointName ?? '同乗者なし（自宅から目的地へ直行）'}
             </div>
             {vp.driveDurationText && (
               <div className="mb-2">
@@ -81,11 +82,13 @@ export default function SharePage() {
               </div>
             )}
             <div className="flex flex-wrap gap-3">
-              <a href={vp.meetingPointMapsUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline text-sm">
-                集合地点をGoogle Mapsで開く
-              </a>
+              {vp.meetingPointMapsUrl && (
+                <a href={vp.meetingPointMapsUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline text-sm">
+                  集合地点をGoogle Mapsで開く
+                </a>
+              )}
               <a href={vp.destinationMapsUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline text-sm">
-                集合地点→目的地のルートを開く
+                {vp.meetingPointName ? '集合地点→目的地のルートを開く' : '目的地へのルートを開く'}
               </a>
             </div>
           </div>

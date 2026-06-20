@@ -180,9 +180,28 @@ export async function calculateAssignment(
     }
   }
 
+  // 車ありメンバーは全員「1台の車」として表示する（同乗者0人でも自宅から直行する車として出す）。
+  // ドライバーの定義順を保って安定した並びにする。
   const vehiclePlans: VehiclePlan[] = [];
-  for (const [, entry] of assignments) {
-    if (entry.passengerIds.length === 0) continue;
+  for (const driver of drivers) {
+    const entry = assignments.get(driver.id)!;
+
+    if (entry.passengerIds.length === 0) {
+      // ソロ車: 集合地点なし。自宅から目的地へ直行。
+      const directKm = haversineDistance(driver.location!, destination);
+      vehiclePlans.push({
+        vehicleId: driver.id,
+        driverId: driver.id,
+        passengerIds: [],
+        meetingPoint: undefined,
+        driveDurationMinutes: estimateDrivingMinutes(directKm),
+        driverDetourMinutes: 0,
+        passengerAccess: [],
+        googleMapsUrl: buildGoogleMapsDirectionsUrl(driver.location!, destination),
+      });
+      continue;
+    }
+
     const duration = realDurations?.get(entry.driverId) ?? entry.driveDurationMinutes;
     const googleMapsUrl = buildGoogleMapsDirectionsUrl(entry.meetingPoint.location, destination);
 

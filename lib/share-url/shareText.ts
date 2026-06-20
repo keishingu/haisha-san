@@ -17,9 +17,11 @@ export function generateShareText(
 
     lines.push(`車${index + 1}: ${driver?.name}さんの車`);
     lines.push(`乗車: ${[driver?.name, ...passengers.map(p => p?.name)].filter(Boolean).join(', ')}`);
-    lines.push(`集合地点: ${vp.meetingPoint.name}`);
+    lines.push(`集合地点: ${vp.meetingPoint ? vp.meetingPoint.name : '同乗者なし（自宅から目的地へ直行）'}`);
     lines.push(`移動時間: 約${vp.driveDurationMinutes}分`);
-    lines.push(`遠回り時間: +${vp.driverDetourMinutes}分`);
+    if (vp.meetingPoint) {
+      lines.push(`遠回り時間: +${vp.driverDetourMinutes}分`);
+    }
     lines.push(`Google Maps: ${vp.googleMapsUrl}`);
     lines.push('');
   });

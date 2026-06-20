@@ -23,10 +23,10 @@ export default function ResultPage() {
 
   if (!plan) return null;
 
-  const { planResult, resultMembers, destinationLabel, shareText } = plan;
+  const { planResult, resultMembers, destinationLabel, destinationLocation, shareText } = plan;
 
   const handleGenerateShareUrl = () => {
-    const payload: SharePlanPayload = buildSharePayload(resultMembers, destinationLabel, planResult, notes);
+    const payload: SharePlanPayload = buildSharePayload(resultMembers, destinationLabel, planResult, destinationLocation, notes);
     const created = buildShareUrl(payload);
     setShareUrl(created.shareUrl);
     setShareWarning(created.warning);
@@ -79,14 +79,17 @@ export default function ResultPage() {
                 <span className="font-medium">乗車:</span> {[driver?.name, ...passengers.map((p) => p?.name)].join(', ')}
               </div>
               <div className="mb-2">
-                <span className="font-medium">集合地点:</span> {vp.meetingPoint.name}
+                <span className="font-medium">集合地点:</span>{' '}
+                {vp.meetingPoint ? vp.meetingPoint.name : '同乗者なし（自宅から目的地へ直行）'}
               </div>
               <div className="mb-2">
                 <span className="font-medium">移動時間:</span> 約{vp.driveDurationMinutes}分
               </div>
-              <div className="mb-2">
-                <span className="font-medium">遠回り時間:</span> +{vp.driverDetourMinutes}分
-              </div>
+              {vp.meetingPoint && (
+                <div className="mb-2">
+                  <span className="font-medium">遠回り時間:</span> +{vp.driverDetourMinutes}分
+                </div>
+              )}
               {vp.passengerAccess.length > 0 && (
                 <div className="mb-2">
                   <span className="font-medium">車なしメンバーの集合:</span>
@@ -95,7 +98,7 @@ export default function ResultPage() {
                       const member = resultMembers.find((m) => m.id === pa.memberId);
                       return (
                         <li key={pa.memberId} className="text-sm text-gray-600">
-                          {member?.name}: 公共交通機関で{vp.meetingPoint.name}へ（約{pa.durationMinutes}分）
+                          {member?.name}: 公共交通機関で{vp.meetingPoint?.name}へ（約{pa.durationMinutes}分）
                         </li>
                       );
                     })}
@@ -108,7 +111,7 @@ export default function ResultPage() {
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:text-blue-800 underline"
               >
-                集合地点→目的地のルートをGoogle Mapsで開く
+                {vp.meetingPoint ? '集合地点→目的地のルートをGoogle Mapsで開く' : '目的地へのルートをGoogle Mapsで開く'}
               </a>
             </div>
           );
