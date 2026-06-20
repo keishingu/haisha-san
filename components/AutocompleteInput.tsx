@@ -1,8 +1,14 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+/* 新API google.maps.places.PlaceAutocompleteElement（Webコンポーネント）を使う住所サジェスト入力。
+ * 旧 google.maps.places.Autocomplete は新規プロジェクトで非推奨のため移行。
+ * APIキー未設定／新APIが使えない場合は通常のテキスト入力にフォールバックする。 */
+
+import { useEffect, useRef, useState } from 'react';
 import { loadMapsApi, isBrowserMapsKeyConfigured } from '@/lib/google-maps/client';
 import { LatLng } from '@/lib/types';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 type Props = {
   value: string;
@@ -12,50 +18,94 @@ type Props = {
   className?: string;
 };
 
-// 住所サジェスト入力。ブラウザ用キーが未設定なら通常のテキスト入力として動作する。
 export default function AutocompleteInput({ value, onChange, onPlaceSelect, placeholder, className }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const initializedRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const fallbackInputRef = useRef<HTMLInputElement>(null);
+  const innerInputRef = useRef<HTMLInputElement | null>(null);
+  const elRef = useRef<any>(null);
+  const [usingElement, setUsingElement] = useState(false);
 
   useEffect(() => {
-    if (!isBrowserMapsKeyConfigured() || initializedRef.current) return;
-    initializedRef.current = true;
+    if (!isBrowserMapsKeyConfigured()) return;
+    let cancelled = false;
 
-    loadMapsApi().then(() => {
-      if (!inputRef.current || !window.google?.maps?.places) return;
+    (async () => {
+      try {
+        await loadMapsApi();
+        const places: any = (window as any).google?.maps?.places;
+        if (cancelled || !containerRef.current || !places?.PlaceAutocompleteElement) return;
 
-      const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
-        componentRestrictions: { country: 'jp' },
-        fields: ['formatted_address', 'geometry.location'],
-      });
+        const el = new places.PlaceAutocompleteElement({ includedRegionCodes: ['jp'] });
+        if (className) el.className = className;
+        elRef.current = el;
+        containerRef.current.appendChild(el);
+        setUsingElement(true);
 
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        if (place?.geometry?.location && place.formatted_address) {
-          onPlaceSelect?.(
-            { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() },
-            place.formatted_address
-          );
+        // 要素内の input を拾えれば、プレースホルダ・初期値・入力中テキストを扱う。
+        const inner = (el.querySelector?.('input') as HTMLInputElement | null) ?? null;
+        if (inner) {
+          innerInputRef.current = inner;
+          if (placeholder) inner.placeholder = placeholder;
+          if (value) inner.value = value;
+          inner.addEventListener('input', () => onChange(inner.value));
         }
-      });
-    }).catch(() => {});
+
+        // 候補選択時: 場所の座標と整形済み住所を取得して親へ通知する。
+        el.addEventListener('gmp-select', async (event: any) => {
+          try {
+            const prediction = event?.placePrediction ?? event?.detail?.placePrediction;
+            if (!prediction) return;
+            const place = prediction.toPlace();
+            await place.fetchFields({ fields: ['location', 'formattedAddress'] });
+            const loc = place.location;
+            const addr = place.formattedAddress ?? '';
+            if (loc) {
+              onPlaceSelect?.({ lat: loc.lat(), lng: loc.lng() }, addr);
+            }
+          } catch {
+            /* 詳細取得に失敗しても入力は継続できる */
+          }
+        });
+      } catch {
+        /* 新APIを初期化できない場合はフォールバックの input を使う */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (elRef.current) {
+        elRef.current.remove?.();
+        elRef.current = null;
+      }
+      innerInputRef.current = null;
+      setUsingElement(false);
+    };
+    // 初回マウント時のみ初期化する
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 親から value が変わったら（例: サンプル読み込み）入力欄へ反映する。
   useEffect(() => {
-    if (inputRef.current && inputRef.current.value !== value) {
-      inputRef.current.value = value;
+    if (fallbackInputRef.current && fallbackInputRef.current.value !== value) {
+      fallbackInputRef.current.value = value;
+    }
+    if (innerInputRef.current && innerInputRef.current.value !== value) {
+      innerInputRef.current.value = value;
     }
   }, [value]);
 
   return (
-    <input
-      ref={inputRef}
-      type="text"
-      defaultValue={value}
-      onInput={() => onChange(inputRef.current?.value ?? '')}
-      placeholder={placeholder}
-      className={className}
-      autoComplete="off"
-    />
+    <div ref={containerRef} className={usingElement ? undefined : 'contents'}>
+      {!usingElement && (
+        <input
+          ref={fallbackInputRef}
+          type="text"
+          defaultValue={value}
+          onInput={() => onChange(fallbackInputRef.current?.value ?? '')}
+          placeholder={placeholder}
+          className={className}
+          autoComplete="off"
+        />
+      )}
+    </div>
   );
 }
