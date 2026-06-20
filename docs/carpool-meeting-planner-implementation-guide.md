@@ -10,13 +10,32 @@ MVPでは厳密な数理最適化よりも、説明しやすく、幹事が納�
 
 ### 2.1 フロントエンド
 
-- Vite + React + TypeScript
+- Next.js App Router + TypeScript
 - 状態管理はReact stateまたはZustand
 - CSSは通常のCSS Modules、Tailwind、または既存の好みでよい
 - 住所・氏名・目的地はLocalStorageへ保存しない
 - 計算中の入力データはブラウザ内で完結する
 - 共有URL発行時もDBやサーバー保存は使わない
 - 共有表示に必要な最小限の結果データをURLフラグメントへ圧縮して埋め込む
+
+推奨ディレクトリ:
+
+```text
+app/
+  page.tsx
+  s/page.tsx
+  api/
+    geocode/route.ts
+    places/route.ts
+    routes/route.ts
+components/
+lib/
+  planner/
+  share-url/
+  google-maps/
+```
+
+`app/page.tsx` は入力・計算画面、`app/s/page.tsx` は `/s#<encoded-payload>` の閲覧専用ページにする。
 
 ### 2.2 DB不要の共有URL
 
@@ -38,7 +57,40 @@ MVPの共有URLは、`/s#<encoded-payload>` のようにURLフラグメントへ
 - `/s#${encodedPayload}` を共有URLとして生成する
 - 共有ページは `location.hash` から復元する
 
-### 2.3 外部API
+### 2.3 Next.js Route Handler
+
+Google Maps Platformのうち、APIキー秘匿、CORS、入力検証、レスポンス整形が必要な呼び出しはRoute Handler経由にする。
+
+MVPで用意するRoute Handler:
+
+- `POST /api/geocode`
+  - 住所や地点名を緯度経度へ変換する
+- `POST /api/places`
+  - 集合地点候補を取得する
+- `POST /api/routes`
+  - 車移動時間、公共交通の概算時間、距離を取得する
+
+Route Handlerの責務:
+
+- Google Maps Platformのサーバー用APIキーを環境変数から読む
+- リクエストを検証する
+- Google APIへ問い合わせる
+- フロントエンドに必要な最小限の形へレスポンスを整形する
+
+APIキー方針:
+
+- Geocoding、Places、Routes、Distance Matrix向けのサーバー用キーはRoute Handlerだけで使う
+- Maps JavaScript API向けのブラウザ用キーが必要な場合は、HTTPリファラー制限と利用API制限を設定する
+- サーバー用キーとブラウザ用キーは分ける
+
+Route Handlerでやらないこと:
+
+- DB保存
+- 共有URL用データの保存
+- 住所、氏名、緯度経度、Google APIレスポンス詳細のログ出力
+- 入力内容のセッション保存
+
+### 2.4 外部API
 
 Google Maps Platformを使う。
 
@@ -53,6 +105,20 @@ Google Maps Platformを使う。
 - Maps JavaScript API
   - 地図表示
   - 集合地点とルートの可視化
+
+ブラウザ側から直接使ってよいもの:
+
+- Maps JavaScript API
+- 地図表示
+- Google Mapsリンク生成
+- DB不要の共有URL生成/復元
+
+Route Handler経由を基本にするもの:
+
+- Geocoding API
+- Places API
+- Routes API
+- Distance Matrix API
 
 ## 3. プライバシー設計
 
@@ -107,6 +173,8 @@ Google Maps Platformを使う。
 - 共有URLはフラグメント内に共有データを含むため、短縮URLサービスへ通す場合は短縮URLサービス側にデータが渡る点を注意表示する
 - 共有URLは削除できない。削除や有効期限が必要な場合は保存型共有URLへ拡張する
 - エラー送信やアクセス解析を導入する場合、住所・氏名を送信しない
+- Next.jsのRoute HandlerはGoogle APIプロキシとしてのみ使い、入力住所や緯度経度を保存しない
+- Route Handlerでは住所、氏名、緯度経度、Google APIレスポンス詳細をログ出力しない
 
 ## 4. 主要データモデル
 
@@ -222,7 +290,7 @@ type CreatedSharePlan = {
 
 ```text
 入力内容はこのブラウザ画面内でのみ使用され、保存されません。
-住所は候補検索と移動時間計算のためGoogle Maps Platformへ送信されます。
+住所は候補検索と移動時間計算のため、配車さんのAPIを経由してGoogle Maps Platformへ送信されます。配車さんは住所を保存しません。
 ```
 
 ### 5.2 結果画面
@@ -637,6 +705,7 @@ Google Mapsから移動時間を取得できませんでした。時間をおい
 - 共有テキストに住所が含まれない
 - 共有URLフラグメントに出発地住所と自宅緯度経度が含まれない
 - 共有URLフラグメントから共有ページを復元できる
+- Route Handlerが住所、氏名、緯度経度、Google APIレスポンス詳細をログ出力しない
 
 ## 16. 実装順序
 
@@ -659,9 +728,11 @@ Google Mapsから移動時間を取得できませんでした。時間をおい
 
 ### Step 3: Google Maps接続
 
-- Places AutocompleteまたはGeocodingを接続
-- Distance MatrixまたはRoutes APIを接続
-- Places APIで集合候補を取得
+- Next.js Route Handlerを追加する
+- `POST /api/geocode` で住所解決を接続する
+- `POST /api/routes` でDistance MatrixまたはRoutes APIを接続する
+- `POST /api/places` で集合候補を取得する
+- APIキー未設定時はモックレスポンスにフォールバックする
 
 ### Step 4: 結果調整
 
