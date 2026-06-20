@@ -39,6 +39,11 @@ export default function HomePage() {
   };
 
   const loadSampleData = () => {
+    // 入力済みのときは誤クリックでの消失を防ぐため確認する。
+    const hasInput = destination.addressInput.trim() !== '' || members.length > 0;
+    if (hasInput && !window.confirm('現在の入力内容をサンプルデータで上書きします。よろしいですか？')) {
+      return;
+    }
     setMembers(getSampleMembers());
     setDestination(getSampleDestination());
     setCalcError(null);
@@ -85,6 +90,12 @@ export default function HomePage() {
               ※ サンプルモードで動作中です（サーバー用APIキー未設定）。サンプルデータの住所辞書で割り当てロジックを確認できます。
             </p>
           )}
+        </div>
+
+        <div className="mb-4">
+          <button onClick={loadSampleData} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm">
+            サンプルデータを読み込む
+          </button>
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-4 mb-4">
@@ -158,12 +169,6 @@ export default function HomePage() {
           ))}
 
           {members.length === 0 && <p className="text-gray-500 text-center py-4">メンバーを追加してください</p>}
-        </div>
-
-        <div className="mb-4">
-          <button onClick={loadSampleData} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm">
-            サンプルデータを読み込む
-          </button>
         </div>
 
         {validationResult && (
