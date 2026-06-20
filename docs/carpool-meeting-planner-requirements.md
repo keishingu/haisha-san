@@ -226,6 +226,8 @@ MVPでは「中間地点集合中心」を基本方式とする。
 - 住所情報を外部APIへ送信することをUI上で明示する
 - Google Maps Platformへ送信される情報と、アプリ側で保存しない情報を区別して説明する
 - 共有URLに含まれる情報と含まれない情報を発行前に明示する
+- Next.jsのRoute HandlerはGoogle Maps Platformを呼び出すための一時的なプロキシとしてのみ使い、リクエスト内容を永続化しない
+- Route Handlerでは住所、氏名、緯度経度、Google APIレスポンス詳細をアプリケーションログへ出力しない
 
 ### 6.4 可用性
 
@@ -236,18 +238,22 @@ MVPでは「中間地点集合中心」を基本方式とする。
 
 ### 7.1 初期実装
 
-- フロントエンド: Next.js または Vite + React
+- アプリケーション: Next.js App Router + TypeScript
+- Google API連携: Next.js Route Handler経由
 - 共有URL: URLフラグメントに圧縮済み共有データを格納するDB不要方式
 - 地図/住所解決: Google Maps Platform
 - 距離行列: Google Maps PlatformのDistance Matrix APIまたはRoutes API
 - 集合地点候補: Google Places API
 - 最適化ロジック: TypeScriptで近似アルゴリズムを実装
 - 状態保存: 原則メモリのみ。住所・氏名・目的地はLocalStorageへ保存しない
+- APIキー管理: Google Maps Platformのサーバー用APIキーは環境変数で管理し、ブラウザへ露出しない
+- ブラウザ用APIキー: Maps JavaScript APIを使う場合のみ利用し、HTTPリファラー制限と利用API制限を必ず設定する
+- サーバー責務: Google APIプロキシ、入力検証、レスポンス整形のみ。DBや永続化は持たない
 
 ### 7.2 将来の高度化
 
 - 最適化エンジン: Google OR-Tools
-- バックエンド: Node.js または Python FastAPI
+- 独立バックエンド: Node.js または Python FastAPI
 - 永続化: SQLite、PostgreSQL、Supabaseなど
 - 保存型共有URL: パスワード保護、期限設定、削除リンク、編集権限の追加
 
@@ -408,7 +414,7 @@ Google Maps: https://maps.google.com/...
 1. 入力フォームと結果表示の静的UIを作る
 2. サンプルデータで割り当てロジックを実装する
 3. Google Mapsリンク生成を実装する
-4. 住所解決、集合地点候補、移動時間取得を接続する
+4. Next.js Route Handler経由で住所解決、集合地点候補、移動時間取得を接続する
 5. 手動調整と再計算を追加する
 6. 共有テキストコピーを追加する
 7. 共有URL発行と閲覧専用ページを追加する
