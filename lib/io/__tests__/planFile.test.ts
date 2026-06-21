@@ -40,4 +40,15 @@ describe('planFile', () => {
     const bad = { version: 1, destination, members: [{ id: '1', name: '田中' }] };
     expect(() => parsePlanFile(JSON.stringify(bad))).toThrow(PlanFileParseError);
   });
+
+  it('手編集や旧バージョンのファイルにlocationが残っていても読み込み時に捨てること', () => {
+    const handEdited = {
+      version: 1,
+      destination,
+      members,
+    };
+    const parsed = parsePlanFile(JSON.stringify(handEdited));
+    expect(parsed.destination.location).toBeUndefined();
+    expect(parsed.members.every((m) => m.location === undefined)).toBe(true);
+  });
 });

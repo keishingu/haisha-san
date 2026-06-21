@@ -1,4 +1,4 @@
-import { Destination, LatLng, Member } from '../types';
+import { Destination, Member } from '../types';
 
 // 入力内容（住所・氏名・目的地）をユーザー自身のファイルとして書き出し/読み込みするための処理。
 // サーバーやブラウザストレージには触れず、JSON文字列の組み立て・解析のみを行う。
@@ -50,18 +50,8 @@ export function parsePlanFile(json: string): PlanFileData {
   };
 }
 
-function parseLatLng(value: unknown): LatLng | undefined {
-  if (value === null || value === undefined) return undefined;
-  if (typeof value !== 'object') {
-    throw new PlanFileParseError('位置情報の形式が正しくありません。');
-  }
-  const v = value as Record<string, unknown>;
-  if (typeof v.lat !== 'number' || typeof v.lng !== 'number') {
-    throw new PlanFileParseError('位置情報の形式が正しくありません。');
-  }
-  return { lat: v.lat, lng: v.lng };
-}
-
+// location（緯度経度）は画面に表示されないため、手編集や旧バージョンのファイルに含まれていても
+// 取り込まずに常に捨てる。表示中の住所テキストと計算に使う座標がズレることを防ぐため。
 function parseDestination(value: unknown): Destination {
   if (typeof value !== 'object' || value === null) {
     throw new PlanFileParseError('目的地のデータが見つかりません。');
@@ -70,7 +60,7 @@ function parseDestination(value: unknown): Destination {
   if (typeof v.addressInput !== 'string') {
     throw new PlanFileParseError('目的地のデータが正しくありません。');
   }
-  return { addressInput: v.addressInput, location: parseLatLng(v.location) };
+  return { addressInput: v.addressInput };
 }
 
 function parseMembers(value: unknown): Member[] {
@@ -98,7 +88,6 @@ function parseMember(value: unknown, index: number): Member {
     name: v.name,
     addressInput: v.addressInput,
     isDriver: v.isDriver,
-    location: parseLatLng(v.location),
     vehicleCapacity: typeof v.vehicleCapacity === 'number' ? v.vehicleCapacity : undefined,
   };
 }
