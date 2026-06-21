@@ -1,4 +1,4 @@
-import { Destination, LatLng, Member } from '@/lib/types';
+import { Destination, LatLng, Member } from '../types';
 
 // 入力内容（住所・氏名・目的地）をユーザー自身のファイルとして書き出し/読み込みするための処理。
 // サーバーやブラウザストレージには触れず、JSON文字列の組み立て・解析のみを行う。
@@ -12,8 +12,14 @@ export type PlanFileData = {
 
 export class PlanFileParseError extends Error {}
 
+// location（緯度経度）は住所文字列から都度再解決できるため書き出さない。
+// テキストの住所だけにすることで、書き出し内容を画面の案内文（住所・氏名・目的地）と一致させる。
 export function buildPlanFile(members: Member[], destination: Destination): PlanFileData {
-  return { version: PLAN_FILE_VERSION, destination, members };
+  return {
+    version: PLAN_FILE_VERSION,
+    destination: { addressInput: destination.addressInput },
+    members: members.map(({ location, ...rest }) => rest),
+  };
 }
 
 export function serializePlanFile(data: PlanFileData): string {

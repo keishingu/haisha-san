@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Member, Destination } from '@/lib/types';
+import { Member, Destination } from '../../types';
 import { buildPlanFile, parsePlanFile, serializePlanFile, PlanFileParseError } from '../planFile';
 
 const members: Member[] = [
@@ -9,11 +9,19 @@ const members: Member[] = [
 const destination: Destination = { addressInput: '河口湖キャンプ場', location: { lat: 35.4786, lng: 138.7531 } };
 
 describe('planFile', () => {
-  it('書き出した内容をそのまま読み込めること（往復一致）', () => {
+  it('書き出した内容をそのまま読み込めること（往復一致、緯度経度は除外）', () => {
     const json = serializePlanFile(buildPlanFile(members, destination));
     const parsed = parsePlanFile(json);
-    expect(parsed.members).toEqual(members);
-    expect(parsed.destination).toEqual(destination);
+    expect(parsed.members).toEqual(members.map(({ location, ...rest }) => rest));
+    expect(parsed.destination).toEqual({ addressInput: destination.addressInput });
+  });
+
+  it('書き出したJSONに緯度経度の値が含まれないこと', () => {
+    const json = serializePlanFile(buildPlanFile(members, destination));
+    expect(json).not.toContain('35.6938');
+    expect(json).not.toContain('139.7034');
+    expect(json).not.toContain('35.4786');
+    expect(json).not.toContain('138.7531');
   });
 
   it('不正なJSONを拒否すること', () => {
