@@ -23,7 +23,7 @@ export function buildSharePayload(
   const destinationMapsUrl = buildDestinationUrl(destinationLocation);
 
   return {
-    title: '配車さん - 配車計画',
+    title: '配車プランナー - 配車計画',
     destinationLabel,
     vehiclePlans: planResult.vehiclePlans.map((vp) => {
       const driver = members.find((m) => m.id === vp.driverId);

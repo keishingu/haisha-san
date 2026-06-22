@@ -4,7 +4,7 @@ import './globals.css';
 import { PlanProvider } from './PlanProvider';
 
 export const metadata: Metadata = {
-  title: '配車さん',
+  title: '配車プランナー',
   description:
     '複数人で同じ目的地へ車移動するときの配車・集合案を提案します。住所や氏名は保存しません。',
 };

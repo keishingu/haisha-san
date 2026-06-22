@@ -47,7 +47,7 @@ export function generateShareText(
     lines.push('');
   }
 
-  lines.push('※ この計画は配車さんで作成されました');
+  lines.push('※ この計画は配車プランナーで作成されました');
   lines.push('※ 入力データ（住所・氏名・目的地）は保存されません');
 
   return lines.join('\n');

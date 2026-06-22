@@ -44,7 +44,7 @@ export default function SharePage() {
               共有URLが壊れているか、対応していない形式の可能性があります。共有元にもう一度URLを発行してもらってください。
             </p>
             <a href="/" className="inline-block mt-4 text-blue-600 underline text-sm">
-              配車さんのトップへ
+              配車プランナーのトップへ
             </a>
           </div>
         </div>
@@ -57,7 +57,7 @@ export default function SharePage() {
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">{payload.title || '配車さん - 配車計画'}</h1>
+        <h1 className="text-2xl font-bold text-gray-800 mb-6">{payload.title || '配車プランナー - 配車計画'}</h1>
 
         <div className="bg-white rounded-lg shadow-md p-4 mb-4">
           <h2 className="text-lg font-semibold text-gray-700 mb-2">目的地</h2>
