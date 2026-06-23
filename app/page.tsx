@@ -8,7 +8,7 @@ import { validateInputs, ValidationResult } from '@/lib/planner/validation';
 import { buildPlan } from '@/lib/planner/buildPlan';
 import { generateShareText } from '@/lib/share-url/shareText';
 import { getApiStatus } from '@/lib/google-maps/client';
-import { buildPlanFile, parsePlanFile, serializePlanFile, PlanFileParseError } from '@/lib/io/planFile';
+import { buildAddressBookCsv, parseAddressBookCsv, AddressBookParseError } from '@/lib/io/addressBook';
 import { usePlan } from './PlanProvider';
 import AutocompleteInput from '@/components/AutocompleteInput';
 
@@ -53,34 +53,35 @@ export default function HomePage() {
     setValidationResult(null);
   };
 
-  // 入力内容（住所含む）をユーザー自身の端末上にJSONファイルとして書き出す。サーバーには送信しない。
+  // 住所録（メンバーの氏名・住所）をユーザー自身の端末上にCSVファイルとして書き出す。サーバーには送信しない。
+  // 目的地は住所録に含めない。
   const handleExport = () => {
-    const data = serializePlanFile(buildPlanFile(members, destination));
-    const blob = new Blob([data], { type: 'application/json' });
+    const data = buildAddressBookCsv(members);
+    // Excel等で文字化けしないようUTF-8 BOMを付与する。
+    const blob = new Blob(['﻿', data], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `haisha-san-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `haisha-san-住所録-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handleImportFile = (file: File) => {
     setImportError(null);
-    const hasInput = destination.addressInput.trim() !== '' || members.length > 0;
-    if (hasInput && !window.confirm('現在の入力内容を読み込んだファイルで上書きします。よろしいですか？')) {
+    // 住所録（メンバー一覧）のみ上書きする。目的地は変更しない。
+    if (members.length > 0 && !window.confirm('現在のメンバー一覧を読み込んだCSVで上書きします。よろしいですか？')) {
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const data = parsePlanFile(String(reader.result));
-        setMembers(data.members);
-        setDestination(data.destination);
+        const importedMembers = parseAddressBookCsv(String(reader.result));
+        setMembers(importedMembers);
         setCalcError(null);
         setValidationResult(null);
       } catch (e) {
-        setImportError(e instanceof PlanFileParseError ? e.message : 'ファイルの読み込みに失敗しました。');
+        setImportError(e instanceof AddressBookParseError ? e.message : 'ファイルの読み込みに失敗しました。');
       }
     };
     reader.onerror = () => setImportError('ファイルの読み込みに失敗しました。');
@@ -121,7 +122,7 @@ export default function HomePage() {
           <p className="text-blue-800 text-sm">
             入力内容（住所・氏名・目的地）はこのブラウザ画面内でのみ使用され、保存されません。
             住所は候補検索と移動時間計算のため、配車プランナーのAPIを経由してGoogle Maps Platformへ送信されます。配車プランナーは住所を保存しません。
-            「ファイルに書き出す」を使うと入力内容をお使いの端末上にファイルとして保存できます（配車プランナーのサーバーには送信されません）。ファイルの保管は自己責任で行ってください。
+            「CSVに書き出す」を使うとメンバーの住所録（氏名・住所）をお使いの端末上にCSVファイルとして保存できます（目的地は含まれず、配車プランナーのサーバーには送信されません）。ファイルの保管は自己責任で行ってください。
           </p>
           {mode === 'sample' && (
             <p className="text-amber-700 text-sm mt-2 font-medium">
@@ -135,18 +136,18 @@ export default function HomePage() {
             サンプルデータを読み込む
           </button>
           <button onClick={handleExport} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm">
-            ファイルに書き出す
+            CSVに書き出す
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
           >
-            ファイルから読み込む
+            CSVから読み込む
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/json"
+            accept=".csv,text/csv"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
