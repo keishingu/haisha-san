@@ -193,8 +193,9 @@ export async function calculateAssignment(
           if (route.steps.length > 0) {
             entry.passengerTransitRoutes.set(passengerId, route.steps);
           }
-        } catch {
-          // 経路取得失敗時は詳細経路なしで継続（時間の推定/算出には影響しない）
+        } catch (err) {
+          // 経路取得失敗時は詳細経路なしで継続（時間の推定/算出には影響しない）。原因切り分け用にブラウザコンソールへ出力。
+          console.error('[transitRoute] 取得失敗', err);
         }
       }
     }

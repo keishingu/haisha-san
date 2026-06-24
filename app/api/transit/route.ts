@@ -45,7 +45,9 @@ export async function POST(req: NextRequest) {
   const data = await googleRes.json();
 
   if (data.status !== 'OK' || !data.routes?.length) {
-    return NextResponse.json({ steps: [], durationMinutes: undefined });
+    // 住所/緯度経度/レスポンス詳細はログ出力しないが、原因切り分けのためstatusコードのみ出力する。
+    console.error(`[/api/transit] Directions API status=${data.status}${data.error_message ? ` message=${data.error_message}` : ''}`);
+    return NextResponse.json({ steps: [], durationMinutes: undefined, status: data.status });
   }
 
   const leg = data.routes[0].legs?.[0];
