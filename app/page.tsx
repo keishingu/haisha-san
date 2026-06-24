@@ -175,17 +175,12 @@ export default function HomePage() {
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-4 mb-4">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-gray-700">メンバー</h2>
-            <button onClick={addMember} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm">
-              メンバー追加
-            </button>
-          </div>
+          <h2 className="text-lg font-semibold text-gray-700 mb-4">メンバー</h2>
 
-          {members.map((member) => (
+          {members.map((member, index) => (
             <div key={member.id} className="border border-gray-200 rounded p-3 mb-3 last:mb-0">
               <div className="flex justify-between items-center mb-2">
-                <span className="font-medium text-gray-700">メンバー</span>
+                <span className="font-medium text-gray-700">メンバー{index + 1}</span>
                 <button onClick={() => removeMember(member.id)} className="text-red-600 hover:text-red-800 text-sm">
                   削除
                 </button>
@@ -234,6 +229,13 @@ export default function HomePage() {
           ))}
 
           {members.length === 0 && <p className="text-gray-500 text-center py-4">メンバーを追加してください</p>}
+
+          <button
+            onClick={addMember}
+            className="mt-3 w-full px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+          >
+            メンバー追加
+          </button>
         </div>
 
         {validationResult && (
