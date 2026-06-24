@@ -6,6 +6,7 @@ import { Member } from '@/lib/types';
 import { getSampleMembers, getSampleDestination } from '@/lib/planner/sampleData';
 import { validateInputs, ValidationResult } from '@/lib/planner/validation';
 import { buildPlan } from '@/lib/planner/buildPlan';
+import { OptimizationMode, DEFAULT_OPTIMIZATION_MODE, OPTIMIZATION_OPTIONS } from '@/lib/planner/optimization';
 import { generateShareText } from '@/lib/share-url/shareText';
 import { getApiStatus } from '@/lib/google-maps/client';
 import { buildAddressBookCsv, parseAddressBookCsv, AddressBookParseError } from '@/lib/io/addressBook';
@@ -19,6 +20,7 @@ export default function HomePage() {
   const [calculating, setCalculating] = useState(false);
   const [calcError, setCalcError] = useState<string | null>(null);
   const [mode, setMode] = useState<'live' | 'sample' | 'unknown'>('unknown');
+  const [optimizationMode, setOptimizationMode] = useState<OptimizationMode>(DEFAULT_OPTIMIZATION_MODE);
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -96,7 +98,7 @@ export default function HomePage() {
 
     setCalculating(true);
     try {
-      const { result, resolvedMembers, destinationLocation } = await buildPlan(members, destination);
+      const { result, resolvedMembers, destinationLocation } = await buildPlan(members, destination, optimizationMode);
       setPlan({
         planResult: result,
         // 氏名のみを結果表示用に保持。住所/緯度経度は保持しない。
@@ -234,6 +236,33 @@ export default function HomePage() {
           ))}
 
           {members.length === 0 && <p className="text-gray-500 text-center py-4">メンバーを追加してください</p>}
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-4 mb-4">
+          <h2 className="text-lg font-semibold text-gray-700 mb-2">最適化の方針</h2>
+          <div className="flex flex-col gap-2">
+            {OPTIMIZATION_OPTIONS.map((opt) => (
+              <label
+                key={opt.mode}
+                className={`flex items-start gap-2 p-2 rounded border cursor-pointer ${
+                  optimizationMode === opt.mode ? 'border-blue-400 bg-blue-50' : 'border-gray-200'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="optimizationMode"
+                  value={opt.mode}
+                  checked={optimizationMode === opt.mode}
+                  onChange={() => setOptimizationMode(opt.mode)}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="text-sm font-medium text-gray-800">{opt.label}</span>
+                  <span className="block text-xs text-gray-500">{opt.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
         </div>
 
         {validationResult && (

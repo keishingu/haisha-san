@@ -1,5 +1,6 @@
 import { Member, Destination, LatLng, MeetingCandidate, PlanResult } from '../types';
 import { calculateAssignment } from './assignment';
+import { OptimizationMode, DEFAULT_OPTIMIZATION_MODE } from './optimization';
 import { getSampleLocation, getDynamicMeetingCandidates } from './sampleData';
 import {
   getApiStatus,
@@ -44,7 +45,11 @@ async function resolveLocation(
  * サーバー用APIキーがあれば Google Maps Platform を使い、無ければサンプル辞書で動作する。
  * 解決した住所・緯度経度はブラウザメモリ上だけで扱い、保存しない。
  */
-export async function buildPlan(members: Member[], destination: Destination): Promise<BuildPlanResult> {
+export async function buildPlan(
+  members: Member[],
+  destination: Destination,
+  optimizationMode: OptimizationMode = DEFAULT_OPTIMIZATION_MODE
+): Promise<BuildPlanResult> {
   const { live } = await getApiStatus();
 
   // 目的地
@@ -89,7 +94,7 @@ export async function buildPlan(members: Member[], destination: Destination): Pr
     throw new Error('集合地点候補が見つかりませんでした。メンバーの住所を確認してください。');
   }
 
-  const result = await calculateAssignment(resolvedMembers, destLocation, candidates, live);
+  const result = await calculateAssignment(resolvedMembers, destLocation, candidates, live, optimizationMode);
 
   return { result, resolvedMembers, destinationLocation: destLocation, mode: live ? 'live' : 'sample' };
 }
