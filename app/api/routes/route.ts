@@ -2,7 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 
 type Coord = { lat: number; lng: number };
 
-// 車移動時間・距離を取得する（Distance Matrix API）。住所/緯度経度/レスポンス詳細はログ出力しない。
+type RouteMatrixElement = {
+  originIndex?: number;
+  destinationIndex?: number;
+  duration?: string;
+  distanceMeters?: number;
+  condition?: string;
+};
+
+function toWaypoint(c: Coord) {
+  return { waypoint: { location: { latLng: { latitude: c.lat, longitude: c.lng } } } };
+}
+
+// 車移動時間・距離を取得する（Routes API computeRouteMatrix）。
+// Distance Matrix API（レガシー）は2025年以降新規プロジェクトで使用できないため、Routes APIを使う。
+// 住所/緯度経度/レスポンス詳細はログ出力しない。
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
@@ -24,27 +38,47 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'origins と destinations が必要です。' }, { status: 400 });
   }
 
-  const originsStr = (origins as Coord[]).map((o) => `${o.lat},${o.lng}`).join('|');
-  const destStr = (destinations as Coord[]).map((d) => `${d.lat},${d.lng}`).join('|');
+  const requestBody = {
+    origins: (origins as Coord[]).map(toWaypoint),
+    destinations: (destinations as Coord[]).map(toWaypoint),
+    travelMode: 'DRIVE',
+    languageCode: 'ja',
+  };
 
-  const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${originsStr}&destinations=${destStr}&key=${apiKey}&language=ja`;
-  const googleRes = await fetch(url);
-  const data = await googleRes.json();
+  const googleRes = await fetch('https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask': 'originIndex,destinationIndex,duration,distanceMeters,condition,status',
+    },
+    body: JSON.stringify(requestBody),
+  });
 
-  if (data.status !== 'OK') {
+  if (!googleRes.ok) {
+    const errText = await googleRes.text().catch(() => '');
+    console.error(`[/api/routes] computeRouteMatrix HTTP ${googleRes.status} ${errText.slice(0, 300)}`);
     return NextResponse.json(
-      { error: '移動時間を取得できませんでした。', status: data.status },
+      { error: '移動時間を取得できませんでした。', status: googleRes.status },
       { status: 400 }
     );
   }
 
-  const rows = data.rows.map((row: { elements: { status: string; duration?: { value: number }; distance?: { value: number } }[] }) =>
-    row.elements.map((elem) => ({
-      durationMinutes: elem.status === 'OK' ? Math.round((elem.duration?.value ?? 0) / 60) : -1,
-      distanceMeters: elem.distance?.value ?? 0,
-      status: elem.status,
-    }))
+  const elements: RouteMatrixElement[] = await googleRes.json();
+
+  const rows: { durationMinutes: number; distanceMeters: number; status: string }[][] = origins.map(() =>
+    destinations.map(() => ({ durationMinutes: -1, distanceMeters: 0, status: 'error' }))
   );
+
+  for (const el of elements) {
+    if (el.originIndex === undefined || el.destinationIndex === undefined) continue;
+    const ok = el.condition === 'ROUTE_EXISTS' && !!el.duration;
+    rows[el.originIndex][el.destinationIndex] = {
+      durationMinutes: ok ? Math.round(parseInt(el.duration!, 10) / 60) : -1,
+      distanceMeters: el.distanceMeters ?? 0,
+      status: ok ? 'OK' : 'error',
+    };
+  }
 
   return NextResponse.json({ rows });
 }
