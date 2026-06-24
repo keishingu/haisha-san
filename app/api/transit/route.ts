@@ -2,18 +2,38 @@ import { NextRequest, NextResponse } from 'next/server';
 
 type Coord = { lat: number; lng: number };
 
-type GoogleTransitDetails = {
-  line?: { short_name?: string; name?: string };
-  departure_stop?: { name?: string };
-  arrival_stop?: { name?: string };
+type TransitLine = { name?: string; nameShort?: string };
+
+type StopDetails = {
+  arrivalStop?: { name?: string };
+  departureStop?: { name?: string };
 };
 
-type GoogleStep = {
-  travel_mode: string;
-  transit_details?: GoogleTransitDetails;
+type TransitDetails = {
+  stopDetails?: StopDetails;
+  transitLine?: TransitLine;
 };
 
-// 車なしメンバーの集合地点までの公共交通経路（乗車駅→降車駅）を取得する（Directions API）。
+type RouteStep = {
+  travelMode?: string;
+  transitDetails?: TransitDetails;
+};
+
+type RouteLeg = {
+  steps?: RouteStep[];
+};
+
+type Route = {
+  duration?: string;
+  legs?: RouteLeg[];
+};
+
+function toWaypoint(c: Coord) {
+  return { location: { latLng: { latitude: c.lat, longitude: c.lng } } };
+}
+
+// 車なしメンバーの集合地点までの公共交通経路（乗車駅→降車駅）を取得する（Routes API computeRoutes）。
+// Directions API（レガシー）は2025年以降新規プロジェクトで使用できないため、Routes APIを使う。
 // 検証用途のみ。住所/緯度経度/レスポンス詳細はログ出力しない。
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -40,26 +60,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'origin と destination が必要です。' }, { status: 400 });
   }
 
-  const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&mode=transit&key=${apiKey}&language=ja`;
-  const googleRes = await fetch(url);
-  const data = await googleRes.json();
+  const requestBody = {
+    origin: toWaypoint(origin),
+    destination: toWaypoint(destination),
+    travelMode: 'TRANSIT',
+    languageCode: 'ja',
+  };
 
-  if (data.status !== 'OK' || !data.routes?.length) {
+  const googleRes = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask': 'routes.duration,routes.legs.steps.travelMode,routes.legs.steps.transitDetails',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!googleRes.ok) {
+    // 住所/緯度経度/レスポンス詳細はログ出力しないが、原因切り分けのためHTTPステータスのみ出力する。
+    const errText = await googleRes.text().catch(() => '');
+    console.error(`[/api/transit] computeRoutes HTTP ${googleRes.status} ${errText.slice(0, 300)}`);
+    return NextResponse.json({ steps: [], durationMinutes: undefined, status: googleRes.status });
+  }
+
+  const data: { routes?: Route[] } = await googleRes.json();
+  const route = data.routes?.[0];
+  if (!route) {
     return NextResponse.json({ steps: [], durationMinutes: undefined });
   }
 
-  const leg = data.routes[0].legs?.[0];
-  const steps: GoogleStep[] = leg?.steps || [];
-
+  const steps = route.legs?.flatMap((leg) => leg.steps || []) || [];
   const transitSteps = steps
-    .filter((s) => s.travel_mode === 'TRANSIT' && s.transit_details?.departure_stop?.name && s.transit_details?.arrival_stop?.name)
+    .filter((s) => s.travelMode === 'TRANSIT' && s.transitDetails?.stopDetails?.departureStop?.name && s.transitDetails?.stopDetails?.arrivalStop?.name)
     .map((s) => ({
-      line: s.transit_details?.line?.short_name || s.transit_details?.line?.name,
-      departureStop: s.transit_details!.departure_stop!.name as string,
-      arrivalStop: s.transit_details!.arrival_stop!.name as string,
+      line: s.transitDetails?.transitLine?.nameShort || s.transitDetails?.transitLine?.name,
+      departureStop: s.transitDetails!.stopDetails!.departureStop!.name as string,
+      arrivalStop: s.transitDetails!.stopDetails!.arrivalStop!.name as string,
     }));
 
-  const durationMinutes = leg?.duration?.value ? Math.round(leg.duration.value / 60) : undefined;
+  const durationMinutes = route.duration ? Math.round(parseInt(route.duration, 10) / 60) : undefined;
 
   return NextResponse.json({ steps: transitSteps, durationMinutes });
 }
