@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGoogleMapsDirectionsUrl, buildTransitToMeetingUrl, buildDestinationUrl } from '../google-maps/links';
+import { buildGoogleMapsDirectionsUrl, buildTransitToMeetingUrl, buildTransitStationRouteUrl, buildDestinationUrl } from '../google-maps/links';
 import { LatLng } from '../types';
 
 describe('Google Maps URL生成', () => {
@@ -27,5 +27,13 @@ describe('Google Maps URL生成', () => {
     const url = buildDestinationUrl(destination);
     expect(url).toContain('https://www.google.com/maps/dir/');
     expect(url).toContain(`destination=${destination.lat}%2C${destination.lng}`);
+  });
+
+  it('駅名から公共交通リンクが生成されること', () => {
+    const url = buildTransitStationRouteUrl('阿佐ヶ谷駅', '幡ヶ谷駅');
+    expect(url).toContain('https://www.google.com/maps/dir/');
+    expect(url).toContain(`origin=${encodeURIComponent('阿佐ヶ谷駅')}`);
+    expect(url).toContain(`destination=${encodeURIComponent('幡ヶ谷駅')}`);
+    expect(url).toContain('travelmode=transit');
   });
 });

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { SharePlanPayload } from '@/lib/types';
 import { buildShareUrl } from '@/lib/share-url/shareUrl';
 import { buildSharePayload } from '@/lib/share-url/payload';
+import { buildTransitStationRouteUrl } from '@/lib/google-maps/links';
 import { usePlan } from '../PlanProvider';
 
 export default function ResultPage() {
@@ -96,17 +97,28 @@ export default function ResultPage() {
                   <ul className="ml-4 mt-1">
                     {vp.passengerAccess.map((pa) => {
                       const member = resultMembers.find((m) => m.id === pa.memberId);
+                      const transitRoute = pa.transitRoute && pa.transitRoute.length > 0 ? pa.transitRoute : undefined;
+                      const routeLabel = transitRoute
+                        ?.map((s) => `${s.departureStop}${s.line ? `(${s.line})` : ''}→${s.arrivalStop}`)
+                        .join(' / ');
+                      const firstStep = transitRoute?.[0];
+                      const lastStep = transitRoute?.[transitRoute.length - 1];
                       return (
                         <li key={pa.memberId} className="text-sm text-gray-600">
-                          {member?.name}: 公共交通機関で{vp.meetingPoint?.name}へ（約{pa.durationMinutes}分）
-                          {pa.transitRoute && pa.transitRoute.length > 0 && (
-                            <span className="block text-xs text-gray-400">
-                              検証用経路:{' '}
-                              {pa.transitRoute
-                                .map((s) => `${s.departureStop}${s.line ? `(${s.line})` : ''}→${s.arrivalStop}`)
-                                .join(' / ')}
-                            </span>
+                          {member?.name}:{' '}
+                          {routeLabel && firstStep && lastStep ? (
+                            <a
+                              href={buildTransitStationRouteUrl(firstStep.departureStop, lastStep.arrivalStop)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline"
+                            >
+                              {routeLabel}
+                            </a>
+                          ) : (
+                            <>公共交通機関で{vp.meetingPoint?.name}へ</>
                           )}
+                          （約{pa.durationMinutes}分）
                         </li>
                       );
                     })}
