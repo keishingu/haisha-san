@@ -1,6 +1,6 @@
-import { Member, MeetingCandidate, VehiclePlan, TransitOnlyPlan, PlanResult, LatLng } from '../types';
+import { Member, MeetingCandidate, VehiclePlan, TransitOnlyPlan, PlanResult, LatLng, TransitRouteStep } from '../types';
 import { buildGoogleMapsDirectionsUrl, buildDestinationUrl } from '../google-maps/links';
-import { getDistanceMatrix } from '../google-maps/client';
+import { getDistanceMatrix, getTransitRoute } from '../google-maps/client';
 
 function haversineDistance(a: LatLng, b: LatLng): number {
   const R = 6371;
@@ -77,6 +77,7 @@ type AssignmentEntry = {
   driverDetourMinutes: number;
   driveDurationMinutes: number;
   passengerAccessMinutes: Map<string, number>;
+  passengerTransitRoutes: Map<string, TransitRouteStep[]>;
 };
 
 export async function calculateAssignment(
@@ -110,6 +111,7 @@ export async function calculateAssignment(
       driverDetourMinutes: 0,
       driveDurationMinutes: 0,
       passengerAccessMinutes: new Map(),
+      passengerTransitRoutes: new Map(),
     });
   }
 
@@ -180,6 +182,24 @@ export async function calculateAssignment(
     }
   }
 
+  // 車なしメンバーの集合経路（乗車駅→降車駅）を取得する。結果の妥当性検証用で、推定時間には影響しない。
+  if (useRealApi) {
+    for (const [, entry] of assignments) {
+      for (const passengerId of entry.passengerIds) {
+        const passenger = members.find(m => m.id === passengerId);
+        if (!passenger?.location) continue;
+        try {
+          const route = await getTransitRoute(passenger.location, entry.meetingPoint.location);
+          if (route.steps.length > 0) {
+            entry.passengerTransitRoutes.set(passengerId, route.steps);
+          }
+        } catch {
+          // 経路取得失敗時は詳細経路なしで継続（時間の推定/算出には影響しない）
+        }
+      }
+    }
+  }
+
   // 車ありメンバーは全員「1台の車」として表示する（同乗者0人でも自宅から直行する車として出す）。
   // ドライバーの定義順を保って安定した並びにする。
   const vehiclePlans: VehiclePlan[] = [];
@@ -216,6 +236,7 @@ export async function calculateAssignment(
         memberId: pid,
         mode: 'transit' as const,
         durationMinutes: entry.passengerAccessMinutes.get(pid),
+        transitRoute: entry.passengerTransitRoutes.get(pid),
       })),
       googleMapsUrl,
     });

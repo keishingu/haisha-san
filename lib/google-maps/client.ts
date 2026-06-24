@@ -131,6 +131,31 @@ export async function getDistanceMatrix(
   );
 }
 
+export type TransitRouteStep = {
+  line?: string;
+  departureStop: string;
+  arrivalStop: string;
+};
+
+export type TransitRouteResult = {
+  steps: TransitRouteStep[];
+  durationMinutes?: number;
+};
+
+// 車なしメンバーの集合地点までの公共交通経路（乗車駅→降車駅）を取得する。検証用途のみ。
+export async function getTransitRoute(origin: LatLng, destination: LatLng): Promise<TransitRouteResult> {
+  const res = await fetch('/api/transit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ origin, destination }),
+  });
+
+  if (!res.ok) return { steps: [] };
+
+  const data = await res.json();
+  return { steps: data.steps || [], durationMinutes: data.durationMinutes };
+}
+
 function mapPlaceType(googleType: string): MeetingCandidate['placeType'] {
   switch (googleType) {
     case 'train_station':

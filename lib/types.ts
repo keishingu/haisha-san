@@ -43,6 +43,14 @@ export type PassengerAccess = {
   memberId: MemberId;
   mode: 'transit' | 'walking' | 'unknown';
   durationMinutes?: number;
+  // 結果が妥当か検証するための詳細経路（乗車駅→降車駅）。共有URLには含めない。
+  transitRoute?: TransitRouteStep[];
+};
+
+export type TransitRouteStep = {
+  line?: string;
+  departureStop: string;
+  arrivalStop: string;
 };
 
 export type PlanResult = {
