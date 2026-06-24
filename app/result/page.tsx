@@ -99,6 +99,14 @@ export default function ResultPage() {
                       return (
                         <li key={pa.memberId} className="text-sm text-gray-600">
                           {member?.name}: 公共交通機関で{vp.meetingPoint?.name}へ（約{pa.durationMinutes}分）
+                          {pa.transitRoute && pa.transitRoute.length > 0 && (
+                            <span className="block text-xs text-gray-400">
+                              検証用経路:{' '}
+                              {pa.transitRoute
+                                .map((s) => `${s.departureStop}${s.line ? `(${s.line})` : ''}→${s.arrivalStop}`)
+                                .join(' / ')}
+                            </span>
+                          )}
                         </li>
                       );
                     })}
