@@ -28,6 +28,15 @@ type Route = {
   legs?: RouteLeg[];
 };
 
+const TRANSIT_FIELD_MASK = [
+  'routes.duration',
+  'routes.legs.steps.travelMode',
+  'routes.legs.steps.transitDetails.stopDetails.departureStop.name',
+  'routes.legs.steps.transitDetails.stopDetails.arrivalStop.name',
+  'routes.legs.steps.transitDetails.transitLine.name',
+  'routes.legs.steps.transitDetails.transitLine.nameShort',
+].join(',');
+
 function toWaypoint(c: Coord) {
   return { location: { latLng: { latitude: c.lat, longitude: c.lng } } };
 }
@@ -65,6 +74,8 @@ export async function POST(req: NextRequest) {
     destination: toWaypoint(destination),
     travelMode: 'TRANSIT',
     languageCode: 'ja',
+    regionCode: 'JP',
+    departureTime: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
   };
 
   const googleRes = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
@@ -72,7 +83,7 @@ export async function POST(req: NextRequest) {
     headers: {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': apiKey,
-      'X-Goog-FieldMask': 'routes.duration,routes.legs.steps.travelMode,routes.legs.steps.transitDetails',
+      'X-Goog-FieldMask': TRANSIT_FIELD_MASK,
     },
     body: JSON.stringify(requestBody),
   });
@@ -87,6 +98,7 @@ export async function POST(req: NextRequest) {
   const data: { routes?: Route[] } = await googleRes.json();
   const route = data.routes?.[0];
   if (!route) {
+    console.error(`[/api/transit] computeRoutes returned no routes`);
     return NextResponse.json({ steps: [], durationMinutes: undefined });
   }
 
