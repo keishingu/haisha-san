@@ -28,6 +28,11 @@ type Route = {
   legs?: RouteLeg[];
 };
 
+type NearbyPlace = {
+  name?: string;
+  geometry?: { location?: { lat?: number; lng?: number } };
+};
+
 const TRANSIT_FIELD_MASK = [
   'routes.duration',
   'routes.legs.steps.travelMode',
@@ -39,6 +44,48 @@ const TRANSIT_FIELD_MASK = [
 
 function toWaypoint(c: Coord) {
   return { location: { latLng: { latitude: c.lat, longitude: c.lng } } };
+}
+
+function distanceMeters(a: Coord, b: Coord): number {
+  const r = 6371000;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return r * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+async function findNearestStation(apiKey: string, c: Coord): Promise<string | undefined> {
+  for (const type of ['train_station', 'transit_station']) {
+    const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${c.lat},${c.lng}&radius=2000&type=${type}&key=${apiKey}&language=ja`;
+    const res = await fetch(url);
+    if (!res.ok) continue;
+
+    const data: { status?: string; results?: NearbyPlace[] } = await res.json();
+    if (data.status !== 'OK' || !data.results?.length) continue;
+
+    return data.results
+      .map((place) => {
+        const loc = place.geometry?.location;
+        if (!place.name || typeof loc?.lat !== 'number' || typeof loc.lng !== 'number') return undefined;
+        return { name: place.name, distance: distanceMeters(c, { lat: loc.lat, lng: loc.lng }) };
+      })
+      .filter((place): place is { name: string; distance: number } => !!place)
+      .sort((a, b) => a.distance - b.distance)[0]?.name;
+  }
+
+  return undefined;
+}
+
+async function buildNearestStationFallback(apiKey: string, origin: Coord, destination: Coord) {
+  const [departureStop, arrivalStop] = await Promise.all([
+    findNearestStation(apiKey, origin),
+    findNearestStation(apiKey, destination),
+  ]);
+
+  if (!departureStop || !arrivalStop || departureStop === arrivalStop) return [];
+  return [{ departureStop, arrivalStop }];
 }
 
 // 車なしメンバーの集合地点までの公共交通経路（乗車駅→降車駅）を取得する（Routes API computeRoutes）。
@@ -99,7 +146,8 @@ export async function POST(req: NextRequest) {
   const route = data.routes?.[0];
   if (!route) {
     console.error(`[/api/transit] computeRoutes returned no routes`);
-    return NextResponse.json({ steps: [], durationMinutes: undefined });
+    const fallbackSteps = await buildNearestStationFallback(apiKey, origin, destination);
+    return NextResponse.json({ steps: fallbackSteps, durationMinutes: undefined });
   }
 
   const steps = route.legs?.flatMap((leg) => leg.steps || []) || [];
@@ -113,5 +161,10 @@ export async function POST(req: NextRequest) {
 
   const durationMinutes = route.duration ? Math.round(parseInt(route.duration, 10) / 60) : undefined;
 
-  return NextResponse.json({ steps: transitSteps, durationMinutes });
+  if (transitSteps.length > 0) {
+    return NextResponse.json({ steps: transitSteps, durationMinutes });
+  }
+
+  const fallbackSteps = await buildNearestStationFallback(apiKey, origin, destination);
+  return NextResponse.json({ steps: fallbackSteps, durationMinutes });
 }
