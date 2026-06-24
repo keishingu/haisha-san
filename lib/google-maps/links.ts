@@ -20,6 +20,16 @@ export function buildTransitToMeetingUrl(origin: LatLng, meetingPoint: LatLng): 
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 
+export function buildTransitStationRouteUrl(originStation: string, destinationStation: string): string {
+  const params = new URLSearchParams({
+    api: '1',
+    origin: originStation,
+    destination: destinationStation,
+    travelmode: 'transit',
+  });
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
 export function buildDestinationUrl(destination: LatLng): string {
   const params = new URLSearchParams({
     api: '1',
