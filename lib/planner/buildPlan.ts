@@ -1,5 +1,6 @@
 import { Member, Destination, LatLng, MeetingCandidate, PlanResult } from '../types';
 import { calculateAssignment } from './assignment';
+import { OptimizationMode, DEFAULT_OPTIMIZATION_MODE } from './optimization';
 import { getSampleLocation, getDynamicMeetingCandidates } from './sampleData';
 import {
   getApiStatus,
@@ -44,7 +45,11 @@ async function resolveLocation(
  * サーバー用APIキーがあれば Google Maps Platform を使い、無ければサンプル辞書で動作する。
  * 解決した住所・緯度経度はブラウザメモリ上だけで扱い、保存しない。
  */
-export async function buildPlan(members: Member[], destination: Destination): Promise<BuildPlanResult> {
+export async function buildPlan(
+  members: Member[],
+  destination: Destination,
+  optimizationMode: OptimizationMode = DEFAULT_OPTIMIZATION_MODE
+): Promise<BuildPlanResult> {
   const { live } = await getApiStatus();
 
   // 目的地
@@ -74,22 +79,34 @@ export async function buildPlan(members: Member[], destination: Destination): Pr
   const nonDriverLocs = resolvedMembers.filter(m => !m.isDriver).map(m => m.location!);
   const searchCenter = nonDriverLocs.length > 0 ? centroid(nonDriverLocs) : destLocation;
 
-  let candidates: MeetingCandidate[] = [];
-  if (live) {
-    try {
-      candidates = await searchMeetingCandidates(searchCenter);
-    } catch {
-      candidates = [];
+  // 指定した中心の周辺で集合地点候補を返すプロバイダ。
+  // live なら Places、無ければ（またはゼロ件なら）内蔵の駅リストから生成する。
+  // 車ごとに呼び出して、その車のメンバーに近い候補を取り直すために使う。
+  const candidateProvider = async (center: LatLng): Promise<MeetingCandidate[]> => {
+    if (live) {
+      try {
+        const r = await searchMeetingCandidates(center);
+        if (r.length > 0) return r;
+      } catch {
+        // フォールバックへ
+      }
     }
-  }
-  if (candidates.length === 0) {
-    candidates = getDynamicMeetingCandidates(searchCenter);
-  }
+    return getDynamicMeetingCandidates(center);
+  };
+
+  const candidates = await candidateProvider(searchCenter);
   if (candidates.length === 0) {
     throw new Error('集合地点候補が見つかりませんでした。メンバーの住所を確認してください。');
   }
 
-  const result = await calculateAssignment(resolvedMembers, destLocation, candidates, live);
+  const result = await calculateAssignment(
+    resolvedMembers,
+    destLocation,
+    candidates,
+    live,
+    optimizationMode,
+    candidateProvider
+  );
 
   return { result, resolvedMembers, destinationLocation: destLocation, mode: live ? 'live' : 'sample' };
 }

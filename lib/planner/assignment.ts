@@ -1,6 +1,7 @@
 import { Member, MeetingCandidate, VehiclePlan, TransitOnlyPlan, PlanResult, LatLng, TransitRouteStep } from '../types';
 import { buildGoogleMapsDirectionsUrl, buildDestinationUrl } from '../google-maps/links';
 import { getDistanceMatrix, getTransitRoute } from '../google-maps/client';
+import { OptimizationMode, ScoreWeights, OPTIMIZATION_WEIGHTS, DEFAULT_OPTIMIZATION_MODE } from './optimization';
 
 function haversineDistance(a: LatLng, b: LatLng): number {
   const R = 6371;
@@ -20,54 +21,93 @@ function estimateTransitMinutes(distanceKm: number): number {
   return Math.round(distanceKm * 3);
 }
 
-type CandidateScore = {
-  driverId: string;
-  meetingPoint: MeetingCandidate;
-  score: number;
-  driverDetourMinutes: number;
-  driveDurationMinutes: number;
-  passengerAccessMinutes: number;
-};
+// ドライバーが自宅→メンバー付近→目的地と回った場合の遠回り時間（分）。
+// 集合地点候補に依存せず、メンバー自身の位置を経由点の代理として使う。
+function pickupDetourMinutes(driver: Member, passenger: Member, destination: LatLng): number {
+  const d = driver.location!;
+  const p = passenger.location!;
+  const direct = haversineDistance(d, destination);
+  const via = haversineDistance(d, p) + haversineDistance(p, destination);
+  return estimateDrivingMinutes(Math.max(0, via - direct));
+}
 
-function scoreCandidate(
+// クラスタリング用コスト（小さいほどそのドライバーに割り当てたい）。
+// 近接性（メンバー↔ドライバーの近さ）と遠回りの両方を見る。
+// 近接性を入れることで、最も遠いドライバーの進路上に全員が吸い寄せられて交差するのを防ぐ。
+function clusterCost(
   driver: Member,
   passenger: Member,
   existingPassengerCount: number,
-  meetingPoint: MeetingCandidate,
-  destination: LatLng
-): CandidateScore {
-  const driverLoc = driver.location!;
-  const meetingLoc = meetingPoint.location;
-  const passengerLoc = passenger.location!;
+  destination: LatLng,
+  weights: ScoreWeights
+): number {
+  const proximityMinutes = estimateTransitMinutes(haversineDistance(passenger.location!, driver.location!));
+  const detourMinutes = pickupDetourMinutes(driver, passenger, destination);
+  return proximityMinutes * weights.access
+    + detourMinutes * weights.detour
+    + existingPassengerCount * weights.congestion;
+}
 
-  const driverToMeeting = haversineDistance(driverLoc, meetingLoc);
-  const meetingToDest = haversineDistance(meetingLoc, destination);
+function centroid(locations: LatLng[]): LatLng {
+  return {
+    lat: locations.reduce((s, p) => s + p.lat, 0) / locations.length,
+    lng: locations.reduce((s, p) => s + p.lng, 0) / locations.length,
+  };
+}
+
+type GroupMeetingChoice = {
+  meetingPoint: MeetingCandidate;
+  driverDetourMinutes: number;
+  driveDurationMinutes: number;
+  passengerAccessMinutes: Map<string, number>;
+};
+
+// 1台分（ドライバー＋同乗者）について、与えられた候補から最適な集合地点を選ぶ。
+function chooseMeetingPointForGroup(
+  driver: Member,
+  passengers: Member[],
+  candidates: MeetingCandidate[],
+  destination: LatLng,
+  weights: ScoreWeights
+): GroupMeetingChoice | null {
+  const driverLoc = driver.location!;
   const driverDirect = haversineDistance(driverLoc, destination);
 
-  const driverDetourKm = driverToMeeting + meetingToDest - driverDirect;
-  const driverDetourMinutes = estimateDrivingMinutes(Math.max(0, driverDetourKm));
-  const driveDurationMinutes = estimateDrivingMinutes(driverToMeeting + meetingToDest);
+  let best: GroupMeetingChoice | null = null;
+  let bestScore = Infinity;
 
-  const passengerDist = haversineDistance(passengerLoc, meetingLoc);
-  const passengerAccessMinutes = estimateTransitMinutes(passengerDist);
+  for (const mp of candidates) {
+    const meetingLoc = mp.location;
+    const driverToMeeting = haversineDistance(driverLoc, meetingLoc);
+    const meetingToDest = haversineDistance(meetingLoc, destination);
+    const detourMinutes = estimateDrivingMinutes(Math.max(0, driverToMeeting + meetingToDest - driverDirect));
+    const driveMinutes = estimateDrivingMinutes(driverToMeeting + meetingToDest);
+    const backtrack = meetingToDest > driverDirect ? detourMinutes : 0;
 
-  const destBacktrack = haversineDistance(meetingLoc, destination) > driverDirect ? driverDetourMinutes : 0;
+    const accessMap = new Map<string, number>();
+    let accessSum = 0;
+    for (const p of passengers) {
+      const a = estimateTransitMinutes(haversineDistance(p.location!, meetingLoc));
+      accessMap.set(p.id, a);
+      accessSum += a;
+    }
 
-  const congestionPenalty = existingPassengerCount * 2;
+    const score = detourMinutes * weights.detour
+      + accessSum * weights.access
+      + backtrack * weights.backtrack;
 
-  const score = driverDetourMinutes * 3
-    + passengerAccessMinutes * 2
-    + destBacktrack * 2
-    + congestionPenalty;
+    if (score < bestScore) {
+      bestScore = score;
+      best = {
+        meetingPoint: mp,
+        driverDetourMinutes: detourMinutes,
+        driveDurationMinutes: driveMinutes,
+        passengerAccessMinutes: accessMap,
+      };
+    }
+  }
 
-  return {
-    driverId: driver.id,
-    meetingPoint,
-    score,
-    driverDetourMinutes,
-    driveDurationMinutes,
-    passengerAccessMinutes,
-  };
+  return best;
 }
 
 type AssignmentEntry = {
@@ -84,8 +124,11 @@ export async function calculateAssignment(
   members: Member[],
   destination: LatLng,
   meetingCandidates: MeetingCandidate[],
-  useRealApi: boolean = false
+  useRealApi: boolean = false,
+  mode: OptimizationMode = DEFAULT_OPTIMIZATION_MODE,
+  candidateProvider?: (center: LatLng) => Promise<MeetingCandidate[]>
 ): Promise<PlanResult> {
+  const weights = OPTIMIZATION_WEIGHTS[mode];
   const drivers = members.filter(m => m.isDriver && m.location);
   const nonDrivers = members.filter(m => !m.isDriver && m.location);
 
@@ -117,33 +160,67 @@ export async function calculateAssignment(
 
   const unassigned: Member[] = [];
 
-  for (const passenger of nonDrivers) {
-    let best: CandidateScore | null = null;
+  // 割り当て（クラスタリング）: 各車なしメンバーを「最も無理なく拾えるドライバー」へ入れる。
+  // 集合地点候補に依存せず、ドライバーの自宅→メンバー付近→目的地の遠回り時間で評価するため、
+  // 地理的に近いメンバーが同じ車にまとまりやすい（候補駅の位置に引っ張られて交差しない）。
+  // メンバーを「拾いにくい順（直行では遠回りが大きい順）」に先に確定させ、取り合いを減らす。
+  const orderedPassengers = [...nonDrivers].sort((a, b) => {
+    const ca = Math.min(...drivers.map(d => clusterCost(d, a, 0, destination, weights)));
+    const cb = Math.min(...drivers.map(d => clusterCost(d, b, 0, destination, weights)));
+    return cb - ca;
+  });
+
+  for (const passenger of orderedPassengers) {
     let bestDriverId = '';
+    let bestScore = Infinity;
 
     for (const driver of drivers) {
       const entry = assignments.get(driver.id)!;
       const cap = (driver.vehicleCapacity || 1) - 1;
       if (entry.passengerIds.length >= cap) continue;
 
-      for (const mp of meetingCandidates) {
-        const scored = scoreCandidate(driver, passenger, entry.passengerIds.length, mp, destination);
-        if (!best || scored.score < best.score) {
-          best = scored;
-          bestDriverId = driver.id;
-        }
+      const score = clusterCost(driver, passenger, entry.passengerIds.length, destination, weights);
+      if (score < bestScore) {
+        bestScore = score;
+        bestDriverId = driver.id;
       }
     }
 
-    if (best) {
-      const entry = assignments.get(bestDriverId)!;
-      entry.passengerIds.push(passenger.id);
-      entry.meetingPoint = best.meetingPoint;
-      entry.driverDetourMinutes = Math.max(entry.driverDetourMinutes, best.driverDetourMinutes);
-      entry.driveDurationMinutes = best.driveDurationMinutes;
-      entry.passengerAccessMinutes.set(passenger.id, best.passengerAccessMinutes);
+    if (bestDriverId) {
+      assignments.get(bestDriverId)!.passengerIds.push(passenger.id);
     } else {
       unassigned.push(passenger);
+    }
+  }
+
+  // 集合地点を車ごとに決める: その車の同乗者＋ドライバーの重心の周辺から候補を取り直し、
+  // 車ごとに最適な集合地点を選ぶ（全車で同じ重心の候補を共有して同じ駅に偏るのを防ぐ）。
+  // candidateProvider が無ければ、渡されたグローバル候補から車ごとに最適点を選ぶ。
+  for (const driver of drivers) {
+    const entry = assignments.get(driver.id)!;
+    if (entry.passengerIds.length === 0) continue;
+
+    const passengers = entry.passengerIds
+      .map(id => members.find(m => m.id === id))
+      .filter((m): m is Member => !!m?.location);
+
+    let candidatesForCar = meetingCandidates;
+    if (candidateProvider) {
+      const groupCenter = centroid([driver.location!, ...passengers.map(p => p.location!)]);
+      try {
+        const local = await candidateProvider(groupCenter);
+        if (local.length > 0) candidatesForCar = local;
+      } catch {
+        // 取得失敗時はグローバル候補で選ぶ
+      }
+    }
+
+    const chosen = chooseMeetingPointForGroup(driver, passengers, candidatesForCar, destination, weights);
+    if (chosen) {
+      entry.meetingPoint = chosen.meetingPoint;
+      entry.driverDetourMinutes = chosen.driverDetourMinutes;
+      entry.driveDurationMinutes = chosen.driveDurationMinutes;
+      entry.passengerAccessMinutes = chosen.passengerAccessMinutes;
     }
   }
 
