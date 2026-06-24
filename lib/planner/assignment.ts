@@ -1,6 +1,7 @@
 import { Member, MeetingCandidate, VehiclePlan, TransitOnlyPlan, PlanResult, LatLng, TransitRouteStep } from '../types';
 import { buildGoogleMapsDirectionsUrl, buildDestinationUrl } from '../google-maps/links';
 import { getDistanceMatrix, getTransitRoute } from '../google-maps/client';
+import { OptimizationMode, ScoreWeights, OPTIMIZATION_WEIGHTS, DEFAULT_OPTIMIZATION_MODE } from './optimization';
 
 function haversineDistance(a: LatLng, b: LatLng): number {
   const R = 6371;
@@ -34,7 +35,8 @@ function scoreCandidate(
   passenger: Member,
   existingPassengerCount: number,
   meetingPoint: MeetingCandidate,
-  destination: LatLng
+  destination: LatLng,
+  weights: ScoreWeights
 ): CandidateScore {
   const driverLoc = driver.location!;
   const meetingLoc = meetingPoint.location;
@@ -53,11 +55,11 @@ function scoreCandidate(
 
   const destBacktrack = haversineDistance(meetingLoc, destination) > driverDirect ? driverDetourMinutes : 0;
 
-  const congestionPenalty = existingPassengerCount * 2;
+  const congestionPenalty = existingPassengerCount * weights.congestion;
 
-  const score = driverDetourMinutes * 3
-    + passengerAccessMinutes * 2
-    + destBacktrack * 2
+  const score = driverDetourMinutes * weights.detour
+    + passengerAccessMinutes * weights.access
+    + destBacktrack * weights.backtrack
     + congestionPenalty;
 
   return {
@@ -84,8 +86,10 @@ export async function calculateAssignment(
   members: Member[],
   destination: LatLng,
   meetingCandidates: MeetingCandidate[],
-  useRealApi: boolean = false
+  useRealApi: boolean = false,
+  mode: OptimizationMode = DEFAULT_OPTIMIZATION_MODE
 ): Promise<PlanResult> {
+  const weights = OPTIMIZATION_WEIGHTS[mode];
   const drivers = members.filter(m => m.isDriver && m.location);
   const nonDrivers = members.filter(m => !m.isDriver && m.location);
 
@@ -127,7 +131,7 @@ export async function calculateAssignment(
       if (entry.passengerIds.length >= cap) continue;
 
       for (const mp of meetingCandidates) {
-        const scored = scoreCandidate(driver, passenger, entry.passengerIds.length, mp, destination);
+        const scored = scoreCandidate(driver, passenger, entry.passengerIds.length, mp, destination, weights);
         if (!best || scored.score < best.score) {
           best = scored;
           bestDriverId = driver.id;
