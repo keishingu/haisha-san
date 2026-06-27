@@ -122,9 +122,7 @@ export default function HomePage() {
 
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
           <p className="text-blue-800 text-sm">
-            入力内容（住所・氏名・目的地）はこのブラウザ画面内でのみ使用され、保存されません。
-            住所は候補検索と移動時間計算のため、配車プランナーのAPIを経由してGoogle Maps Platformへ送信されます。配車プランナーは住所を保存しません。
-            「CSVに書き出す」を使うとメンバーの住所録（氏名・住所）をお使いの端末上にCSVファイルとして保存できます（目的地は含まれず、配車プランナーのサーバーには送信されません）。ファイルの保管は自己責任で行ってください。
+            住所・氏名・目的地は保存しません（ブラウザ内だけで処理）。住所は検索・所要時間の計算のためGoogle Maps Platformへ送信されます。CSV書き出しはお使いの端末に保存され、サーバーには送信されません。
           </p>
           {mode === 'sample' && (
             <p className="text-amber-700 text-sm mt-2 font-medium">
