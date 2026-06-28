@@ -55,6 +55,20 @@ function centroid(locations: LatLng[]): LatLng {
   };
 }
 
+// ドライバーが指定集合場所を持つ場合、その場所を表す集合地点候補を作る。
+// これを唯一の候補として渡すことで、自動選定を上書きして必ずこの場所が選ばれる。
+function buildMeetingOverride(driver: Member): MeetingCandidate | null {
+  if (!driver.meetingPointLocation) return null;
+  const label = driver.meetingPointInput?.trim() || '指定の集合場所';
+  return {
+    id: `custom-${driver.id}`,
+    name: label,
+    address: label,
+    location: driver.meetingPointLocation,
+    placeType: 'custom',
+  };
+}
+
 type GroupMeetingChoice = {
   meetingPoint: MeetingCandidate;
   driverDetourMinutes: number;
@@ -145,6 +159,7 @@ export async function calculateAssignment(
     };
   }
 
+  const warnings: string[] = [];
   const assignments = new Map<string, AssignmentEntry>();
   for (const d of drivers) {
     assignments.set(d.id, {
@@ -160,11 +175,72 @@ export async function calculateAssignment(
 
   const unassigned: Member[] = [];
 
+  // 同乗グループ（ハード制約）を先に確定する: 同じ groupId のメンバーは必ず同じ車にする。
+  // グループにドライバーが含まれていればその車に固定し、いなければ全員を1台に収められる
+  // ドライバーの中で最もコストの低い車にまとめる。どの車にも全員が収まらない場合は
+  // 「ばらさない」を優先して、そのグループ全員を公共交通の案に回す。
+  // （同一グループにドライバーが複数いるケースは計算前のバリデーションで弾く前提。）
+  const grouped = new Set<string>();
+  const groups = new Map<string, { driver?: Member; passengers: Member[] }>();
+  for (const m of members) {
+    const gid = m.groupId?.trim();
+    if (!gid || !m.location) continue;
+    let g = groups.get(gid);
+    if (!g) {
+      g = { passengers: [] };
+      groups.set(gid, g);
+    }
+    if (m.isDriver) g.driver = g.driver ?? m;
+    else g.passengers.push(m);
+  }
+
+  for (const [gid, g] of groups) {
+    if (g.passengers.length === 0) continue;
+    for (const p of g.passengers) grouped.add(p.id);
+
+    let targetDriver = g.driver;
+    if (!targetDriver) {
+      // ドライバー無しグループ: 全員が同時に収まる車だけを対象に、合計コスト最小の車を選ぶ。
+      let bestScore = Infinity;
+      for (const driver of drivers) {
+        const entry = assignments.get(driver.id)!;
+        const seatsLeft = (driver.vehicleCapacity || 1) - 1 - entry.passengerIds.length;
+        if (seatsLeft < g.passengers.length) continue;
+        const score = g.passengers.reduce(
+          (s, p) => s + clusterCost(driver, p, entry.passengerIds.length, destination, weights),
+          0
+        );
+        if (score < bestScore) {
+          bestScore = score;
+          targetDriver = driver;
+        }
+      }
+    }
+
+    if (!targetDriver) {
+      warnings.push(`同乗グループ「${gid}」(${g.passengers.length}人)を同じ車にまとめられる空きがありませんでした。公共交通で目的地へ向かう案として表示します。`);
+      unassigned.push(...g.passengers);
+      continue;
+    }
+
+    const entry = assignments.get(targetDriver.id)!;
+    const cap = (targetDriver.vehicleCapacity || 1) - 1;
+    for (const p of g.passengers) {
+      if (entry.passengerIds.length >= cap) {
+        warnings.push(`同乗グループ「${gid}」が「${targetDriver.name}」の定員を超えたため、「${p.name}」は公共交通で目的地へ向かう案にしました。`);
+        unassigned.push(p);
+      } else {
+        entry.passengerIds.push(p.id);
+      }
+    }
+  }
+
   // 割り当て（クラスタリング）: 各車なしメンバーを「最も無理なく拾えるドライバー」へ入れる。
   // 集合地点候補に依存せず、ドライバーの自宅→メンバー付近→目的地の遠回り時間で評価するため、
   // 地理的に近いメンバーが同じ車にまとまりやすい（候補駅の位置に引っ張られて交差しない）。
   // メンバーを「拾いにくい順（直行では遠回りが大きい順）」に先に確定させ、取り合いを減らす。
-  const orderedPassengers = [...nonDrivers].sort((a, b) => {
+  // 同乗グループで確定済みのメンバーはここでは扱わない。
+  const orderedPassengers = nonDrivers.filter(m => !grouped.has(m.id)).sort((a, b) => {
     const ca = Math.min(...drivers.map(d => clusterCost(d, a, 0, destination, weights)));
     const cb = Math.min(...drivers.map(d => clusterCost(d, b, 0, destination, weights)));
     return cb - ca;
@@ -204,8 +280,12 @@ export async function calculateAssignment(
       .map(id => members.find(m => m.id === id))
       .filter((m): m is Member => !!m?.location);
 
+    // ドライバーが指定集合場所を持つ場合は、その場所を唯一の候補として渡し自動選定を上書きする。
     let candidatesForCar = meetingCandidates;
-    if (candidateProvider) {
+    const override = buildMeetingOverride(driver);
+    if (override) {
+      candidatesForCar = [override];
+    } else if (candidateProvider) {
       const groupCenter = centroid([driver.location!, ...passengers.map(p => p.location!)]);
       try {
         const local = await candidateProvider(groupCenter);
@@ -326,7 +406,6 @@ export async function calculateAssignment(
     reason: 'seat_shortage' as const,
   }));
 
-  const warnings: string[] = [];
   const totalCapacity = drivers.reduce((sum, d) => sum + (d.vehicleCapacity || 0), 0);
   const shortage = Math.max(0, members.length - totalCapacity);
   if (shortage > 0) {

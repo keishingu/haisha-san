@@ -62,4 +62,36 @@ describe('validateInputs', () => {
     expect(result.isValid).toBe(true);
     expect(result.warnings).toContain('全員を乗せるにはあと1席足りません。乗車できないメンバーは公共交通で目的地へ向かう案として表示します。');
   });
+
+  it('同じ同乗グループに車ありが2人いる場合エラーになること', () => {
+    const members: Member[] = [
+      { ...validMembers[0], groupId: '1' },
+      { id: '3', name: '鈴木', addressInput: '東京都中野区', location: { lat: 35.7077, lng: 139.6639 }, isDriver: true, vehicleCapacity: 4, groupId: '1' },
+      validMembers[1],
+    ];
+    const result = validateInputs(members, validDestination);
+    expect(result.isValid).toBe(false);
+    expect(result.errors).toContain('同乗グループ「1」に車ありメンバーが2人います。1つのグループに車ありは1人までにしてください。');
+  });
+
+  it('車なしだけの同乗グループはエラーにならないこと', () => {
+    const members: Member[] = [
+      validMembers[0],
+      { ...validMembers[1], groupId: '2' },
+      { id: '3', name: '鈴木', addressInput: '東京都中野区', location: { lat: 35.7077, lng: 139.6639 }, isDriver: false, groupId: '2' },
+    ];
+    const result = validateInputs(members, validDestination);
+    expect(result.isValid).toBe(true);
+  });
+
+  it('ドライバー付き同乗グループが空席を超える場合警告が出ること', () => {
+    const members: Member[] = [
+      { ...validMembers[0], vehicleCapacity: 2, groupId: '1' }, // 空席は1
+      { ...validMembers[1], groupId: '1' },
+      { id: '3', name: '鈴木', addressInput: '東京都中野区', location: { lat: 35.7077, lng: 139.6639 }, isDriver: false, groupId: '1' },
+    ];
+    const result = validateInputs(members, validDestination);
+    expect(result.isValid).toBe(true);
+    expect(result.warnings).toContain('同乗グループ「1」は「田中」の空席(1人)を超えています。超過分は公共交通で目的地へ向かう案になります。');
+  });
 });

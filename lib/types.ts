@@ -13,6 +13,12 @@ export type Member = {
   location?: LatLng;
   isDriver: boolean;
   vehicleCapacity?: number; // ドライバー本人を含む総定員
+  // 同乗グループ。同じ値を持つメンバーは必ず同じ車にする（ハード制約）。空/未設定はグループ無し。
+  groupId?: string;
+  // 指定集合場所（ドライバー向け）。自宅とは別に「ここに集合して」を明示するための住所テキスト。
+  // 設定された車はアルゴリズムによる集合地点の自動選定を行わず、この場所を使う。
+  meetingPointInput?: string;
+  meetingPointLocation?: LatLng; // 指定集合場所の解決済み座標（ブラウザメモリ上のみ）
 };
 
 export type Destination = {

@@ -22,7 +22,18 @@ describe('addressBook CSV', () => {
     expect(csv).not.toContain('35.6938');
     expect(csv).not.toContain('139.7034');
     // 内部ID（'1','2'）が住所・氏名以外の独立した列として出ていないこと
-    expect(csv.split('\r\n')[0]).toBe('氏名,住所,運転,定員');
+    expect(csv.split('\r\n')[0]).toBe('氏名,住所,運転,定員,同乗グループ,指定集合場所');
+  });
+
+  it('同乗グループと指定集合場所を往復できること', () => {
+    const withExtras: Member[] = [
+      { id: '1', name: '田中', addressInput: '東京都新宿区', isDriver: true, vehicleCapacity: 4, groupId: '1', meetingPointInput: '新宿駅西口' },
+      { id: '2', name: '佐藤', addressInput: '東京都世田谷区', isDriver: false, groupId: '1' },
+    ];
+    const parsed = parseAddressBookCsv(buildAddressBookCsv(withExtras));
+    expect(parsed[0]).toMatchObject({ groupId: '1', meetingPointInput: '新宿駅西口' });
+    expect(parsed[1]).toMatchObject({ groupId: '1' });
+    expect(parsed[1].meetingPointInput).toBeUndefined();
   });
 
   it('カンマや改行を含む住所を正しく往復できること', () => {

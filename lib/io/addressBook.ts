@@ -9,7 +9,7 @@ import { Member } from '../types';
 export class AddressBookParseError extends Error {}
 
 // 書き出し時のヘッダー（日本語）。表計算ソフトで開いたときに分かりやすい並び。
-const EXPORT_HEADER = ['氏名', '住所', '運転', '定員'];
+const EXPORT_HEADER = ['氏名', '住所', '運転', '定員', '同乗グループ', '指定集合場所'];
 
 // 読み込み時に許容する列名のゆれ。外部の住所録CSVを取り込めるよう別名も受け付ける。
 // 比較は normalizeHeader（trim + 小文字化 + 空白除去）後の文字列で行う。
@@ -17,6 +17,8 @@ const NAME_ALIASES = ['氏名', '名前', 'name'];
 const ADDRESS_ALIASES = ['住所', 'address'];
 const DRIVER_ALIASES = ['運転', '運転手', '運転可否', 'ドライバー', 'driver', 'isdriver'];
 const CAPACITY_ALIASES = ['定員', '乗車定員', '席数', 'capacity', 'vehiclecapacity'];
+const GROUP_ALIASES = ['同乗グループ', 'グループ', 'group', 'groupid'];
+const MEETING_ALIASES = ['指定集合場所', '集合場所', 'meetingpoint', 'meeting'];
 
 // 運転可否を「はい」とみなす値。表計算ソフトでよく使われる表記を広めに許容する。
 const DRIVER_TRUE_VALUES = ['はい', 'yes', 'true', '1', '○', '◯', 'o', 'y', '可'];
@@ -27,6 +29,8 @@ export function buildAddressBookCsv(members: Member[]): string {
     m.addressInput,
     m.isDriver ? 'はい' : 'いいえ',
     m.vehicleCapacity != null ? String(m.vehicleCapacity) : '',
+    m.groupId ?? '',
+    m.meetingPointInput ?? '',
   ]);
   return [EXPORT_HEADER, ...rows].map((row) => row.map(escapeCsvField).join(',')).join('\r\n');
 }
@@ -49,6 +53,8 @@ export function parseAddressBookCsv(csv: string): Member[] {
   }
   const driverIdx = findColumn(header, DRIVER_ALIASES);
   const capacityIdx = findColumn(header, CAPACITY_ALIASES);
+  const groupIdx = findColumn(header, GROUP_ALIASES);
+  const meetingIdx = findColumn(header, MEETING_ALIASES);
 
   const members: Member[] = [];
   for (let i = 1; i < nonEmptyRows.length; i++) {
@@ -68,6 +74,10 @@ export function parseAddressBookCsv(csv: string): Member[] {
     };
     const capacity = capacityIdx === -1 ? undefined : parseCapacity(row[capacityIdx]);
     if (capacity !== undefined) member.vehicleCapacity = capacity;
+    const groupId = groupIdx === -1 ? '' : (row[groupIdx] ?? '').trim();
+    if (groupId !== '') member.groupId = groupId;
+    const meetingPoint = meetingIdx === -1 ? '' : (row[meetingIdx] ?? '').trim();
+    if (meetingPoint !== '') member.meetingPointInput = meetingPoint;
     members.push(member);
   }
 

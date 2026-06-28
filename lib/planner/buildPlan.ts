@@ -61,13 +61,26 @@ export async function buildPlan(
   // メンバー
   const resolvedMembers: Member[] = [];
   const unresolved: string[] = [];
+  const meetingPointWarnings: string[] = [];
   for (const m of members) {
     const loc = await resolveLocation(m.addressInput, m.location, live);
-    if (loc) {
-      resolvedMembers.push({ ...m, location: loc });
-    } else {
+    if (!loc) {
       unresolved.push(m.name || m.addressInput);
+      continue;
     }
+    const resolved: Member = { ...m, location: loc };
+    // ドライバーの指定集合場所を解決する。特定できない場合は自動選定にフォールバックし、警告で知らせる。
+    if (m.isDriver && m.meetingPointInput?.trim()) {
+      const mpLoc = await resolveLocation(m.meetingPointInput, m.meetingPointLocation, live);
+      if (mpLoc) {
+        resolved.meetingPointLocation = mpLoc;
+      } else {
+        meetingPointWarnings.push(
+          `「${m.name || m.addressInput}」の指定集合場所「${m.meetingPointInput.trim()}」を特定できませんでした。集合地点を自動で選びました。`
+        );
+      }
+    }
+    resolvedMembers.push(resolved);
   }
   if (unresolved.length > 0) {
     throw new Error(
@@ -107,6 +120,10 @@ export async function buildPlan(
     optimizationMode,
     candidateProvider
   );
+
+  if (meetingPointWarnings.length > 0) {
+    result.warnings.push(...meetingPointWarnings);
+  }
 
   return { result, resolvedMembers, destinationLocation: destLocation, mode: live ? 'live' : 'sample' };
 }
