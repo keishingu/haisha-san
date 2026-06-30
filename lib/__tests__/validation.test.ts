@@ -84,14 +84,23 @@ describe('validateInputs', () => {
     expect(result.isValid).toBe(true);
   });
 
-  it('ドライバー付き同乗グループが空席を超える場合警告が出ること', () => {
+  it('ドライバー付き同乗グループが定員を超える場合エラーになること', () => {
     const members: Member[] = [
       { ...validMembers[0], vehicleCapacity: 2, groupId: '1' }, // 空席は1
       { ...validMembers[1], groupId: '1' },
       { id: '3', name: '鈴木', addressInput: '東京都中野区', location: { lat: 35.7077, lng: 139.6639 }, isDriver: false, groupId: '1' },
     ];
     const result = validateInputs(members, validDestination);
+    expect(result.isValid).toBe(false);
+    expect(result.errors).toContain('同乗グループ「1」は「田中」の定員(2人)では乗り切れません（同乗2人）。グループの人数を減らすか定員を増やしてください。');
+  });
+
+  it('ドライバー付き同乗グループが定員ちょうどならエラーにならないこと', () => {
+    const members: Member[] = [
+      { ...validMembers[0], vehicleCapacity: 2, groupId: '1' }, // 空席1 = 同乗1人ちょうど
+      { ...validMembers[1], groupId: '1' },
+    ];
+    const result = validateInputs(members, validDestination);
     expect(result.isValid).toBe(true);
-    expect(result.warnings).toContain('同乗グループ「1」は「田中」の空席(1人)を超えています。超過分は公共交通で目的地へ向かう案になります。');
   });
 });

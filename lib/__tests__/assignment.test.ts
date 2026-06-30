@@ -167,6 +167,21 @@ describe('calculateAssignment', () => {
     expect(transitIds).toEqual(['2', '3']);
   });
 
+  it('ドライバー付きグループが定員を超える場合は分割せずグループ全員を公共交通組にすること', async () => {
+    // 田中の定員は2（同乗は1人まで）だが、グループ同乗者が2人。分割せず2人とも公共交通へ。
+    const members: Member[] = [
+      { id: '1', name: '田中', addressInput: '東京都新宿区', location: { lat: 35.6938, lng: 139.7034 }, isDriver: true, vehicleCapacity: 2, groupId: '1' },
+      { id: '2', name: '佐藤', addressInput: '東京都世田谷区', location: { lat: 35.6462, lng: 139.6527 }, isDriver: false, groupId: '1' },
+      { id: '3', name: '鈴木', addressInput: '東京都中野区', location: { lat: 35.7077, lng: 139.6639 }, isDriver: false, groupId: '1' },
+    ];
+
+    const result = await calculateAssignment(members, destination, meetingCandidates);
+
+    const tanakaCar = result.vehiclePlans.find((vp) => vp.driverId === '1');
+    expect(tanakaCar!.passengerIds).toHaveLength(0);
+    expect(result.transitOnlyPlans.map((t) => t.memberId).sort()).toEqual(['2', '3']);
+  });
+
   it('ドライバーの指定集合場所が集合地点として使われること', async () => {
     const meetingPointLocation: LatLng = { lat: 35.6896, lng: 139.7006 }; // 新宿駅
     const members: Member[] = [

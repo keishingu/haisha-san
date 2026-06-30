@@ -232,15 +232,15 @@ export async function calculateAssignment(
     }
 
     const entry = assignments.get(targetDriver.id)!;
-    const cap = (targetDriver.vehicleCapacity || 1) - 1;
-    for (const p of g.passengers) {
-      if (entry.passengerIds.length >= cap) {
-        warnings.push(`同乗グループ「${gid}」が「${targetDriver.name}」の定員を超えたため、「${p.name}」は公共交通で目的地へ向かう案にしました。`);
-        unassigned.push(p);
-      } else {
-        entry.passengerIds.push(p.id);
-      }
+    const seatsLeft = (targetDriver.vehicleCapacity || 1) - 1 - entry.passengerIds.length;
+    if (g.passengers.length > seatsLeft) {
+      // 定員を超える固定グループは分割しない（一部だけ乗せて残りを公共交通にしない）。
+      // ドライバー付きの定員超過グループは通常、計算前のバリデーションで弾かれる前提。
+      warnings.push(`同乗グループ「${gid}」が「${targetDriver.name}」の定員を超えるため、グループ全員を公共交通で目的地へ向かう案にしました。`);
+      unassigned.push(...g.passengers);
+      continue;
     }
+    for (const p of g.passengers) entry.passengerIds.push(p.id);
   }
 
   // 割り当て（クラスタリング）: 各車なしメンバーを「最も無理なく拾えるドライバー」へ入れる。

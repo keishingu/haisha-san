@@ -64,9 +64,11 @@ export function validateInputs(members: Member[], destination: Destination): Val
     const passengers = groupMembers.filter(m => !m.isDriver);
     if (passengers.length === 0) continue;
     if (groupDrivers.length === 1) {
-      const seats = (groupDrivers[0].vehicleCapacity || 0) - 1;
-      if (passengers.length > seats) {
-        warnings.push(`同乗グループ「${gid}」は「${groupDrivers[0].name}」の空席(${Math.max(0, seats)}人)を超えています。超過分は公共交通で目的地へ向かう案になります。`);
+      // ドライバー固定グループは「同じ車」がハード制約のため、定員を超える指定は
+      // 分割せず計算前にエラーで止める（定員未設定は別途エラーになるのでここでは除外）。
+      const capacity = groupDrivers[0].vehicleCapacity;
+      if (capacity && passengers.length > capacity - 1) {
+        errors.push(`同乗グループ「${gid}」は「${groupDrivers[0].name}」の定員(${capacity}人)では乗り切れません（同乗${passengers.length}人）。グループの人数を減らすか定員を増やしてください。`);
       }
     } else if (passengers.length > Math.max(0, maxCapacity - 1)) {
       warnings.push(`同乗グループ「${gid}」(${passengers.length}人)を1台にまとめられる車がありません。公共交通で目的地へ向かう案になります。`);
