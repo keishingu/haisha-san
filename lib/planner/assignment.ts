@@ -194,7 +194,15 @@ export async function calculateAssignment(
     else g.passengers.push(m);
   }
 
-  for (const [gid, g] of groups) {
+  // ドライバー固定グループ（g.driver あり）を先に確定して必要席を確保し、その後で
+  // ドライバー無しグループを割り当てる。こうしないと、メンバー一覧での出現順によっては
+  // ドライバー無しグループが固定グループの車の席を先取りし、固定グループのメンバーが
+  // 押し出されてしまう（バリデーション上は収まるはずなのに分割される）ため。
+  const orderedGroups = [...groups.entries()].sort(
+    ([, a], [, b]) => (a.driver ? 0 : 1) - (b.driver ? 0 : 1)
+  );
+
+  for (const [gid, g] of orderedGroups) {
     if (g.passengers.length === 0) continue;
     for (const p of g.passengers) grouped.add(p.id);
 
