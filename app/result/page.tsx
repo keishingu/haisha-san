@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { SharePlanPayload } from '@/lib/types';
 import { buildShareUrl } from '@/lib/share-url/shareUrl';
 import { buildSharePayload } from '@/lib/share-url/payload';
+import { shortenShareUrl } from '@/lib/share-url/shorten';
 import { buildTransitStationRouteUrl } from '@/lib/google-maps/links';
 import { getGroupStyle, getGroupLabel } from '@/lib/ui/groupStyle';
 import { usePlan } from '../PlanProvider';
@@ -25,6 +26,9 @@ export default function ResultPage() {
   const [shareWarning, setShareWarning] = useState<string | undefined>(undefined);
   const [showShareModal, setShowShareModal] = useState(false);
   const [notes, setNotes] = useState<string>('');
+  const [shortUrl, setShortUrl] = useState<string>('');
+  const [isShortening, setIsShortening] = useState(false);
+  const [shortenError, setShortenError] = useState<string | undefined>(undefined);
 
   // 直接アクセス/リロードで結果が無い場合は入力画面へ戻す（結果はメモリ保持のため）。
   useEffect(() => {
@@ -40,7 +44,22 @@ export default function ResultPage() {
     const created = buildShareUrl(payload);
     setShareUrl(created.shareUrl);
     setShareWarning(created.warning);
+    setShortUrl('');
+    setShortenError(undefined);
     setShowShareModal(true);
+  };
+
+  const handleShortenUrl = async () => {
+    setIsShortening(true);
+    setShortenError(undefined);
+    try {
+      const result = await shortenShareUrl(shareUrl);
+      setShortUrl(result);
+    } catch (e) {
+      setShortenError(e instanceof Error ? e.message : '短縮URLの作成に失敗しました。');
+    } finally {
+      setIsShortening(false);
+    }
   };
 
   const handleCopy = async (text: string, label: string) => {
@@ -245,6 +264,26 @@ export default function ResultPage() {
                     コピー
                   </button>
                 </div>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">短縮URL（tinyurl.com）:</label>
+                {shortUrl ? (
+                  <div className="flex gap-2">
+                    <input type="text" value={shortUrl} readOnly className="flex-1 p-2 border border-gray-300 rounded text-sm bg-gray-50" />
+                    <button onClick={() => handleCopy(shortUrl, '短縮URL')} className="px-3 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm">
+                      コピー
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleShortenUrl}
+                    disabled={isShortening}
+                    className="px-3 py-2 bg-blue-100 text-blue-800 rounded hover:bg-blue-200 text-sm disabled:opacity-50"
+                  >
+                    {isShortening ? '作成中...' : '短縮URLを作成'}
+                  </button>
+                )}
+                {shortenError && <p className="text-sm text-red-700 mt-1">{shortenError}</p>}
               </div>
               <div className="flex justify-between">
                 <a href={shareUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 text-blue-600 underline text-sm self-center">
