@@ -123,6 +123,12 @@ export default function HomePage() {
     }
   };
 
+  // CSV取り込み等で生じた 1〜9 以外のグループID（重複排除・整列）。
+  // どのメンバーのピッカーにも候補として出し、既存グループへの追加を可能にする。
+  const customGroupIds = Array.from(
+    new Set(members.map((m) => m.groupId).filter((g): g is string => !!g && !GROUP_OPTIONS.includes(g)))
+  ).sort();
+
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-2xl mx-auto">
@@ -248,10 +254,13 @@ export default function HomePage() {
                         グループ{g}
                       </option>
                     ))}
-                    {/* CSV取り込み等で 1〜9 以外のグループIDが入った場合も選択状態を保てるようにする */}
-                    {member.groupId && !GROUP_OPTIONS.includes(member.groupId) && (
-                      <option value={member.groupId}>グループ{member.groupId}</option>
-                    )}
+                    {/* CSV取り込み等で生じた 1〜9 以外のグループIDは、どのメンバーの
+                        ピッカーにも候補として出し、既存グループへ別メンバーを追加できるようにする */}
+                    {customGroupIds.map((g) => (
+                      <option key={g} value={g}>
+                        グループ{g}
+                      </option>
+                    ))}
                   </select>
                   <span className="text-sm text-gray-500">同じ番号は同じ車</span>
                 </div>
