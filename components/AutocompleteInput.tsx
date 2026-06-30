@@ -21,16 +21,19 @@ export default function AutocompleteInput({ value, onChange, onPlaceSelect, plac
     if (!isBrowserMapsKeyConfigured() || initializedRef.current) return;
     initializedRef.current = true;
 
-    loadMapsApi().then(() => {
-      if (!inputRef.current || !window.google?.maps?.places) return;
+    let autocomplete: google.maps.places.Autocomplete | null = null;
+    let cancelled = false;
 
-      const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
+    loadMapsApi().then(() => {
+      if (cancelled || !inputRef.current || !window.google?.maps?.places) return;
+
+      autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
         componentRestrictions: { country: 'jp' },
         fields: ['formatted_address', 'geometry.location'],
       });
 
       autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
+        const place = autocomplete!.getPlace();
         if (place?.geometry?.location && place.formatted_address) {
           onPlaceSelect?.(
             { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() },
@@ -39,6 +42,17 @@ export default function AutocompleteInput({ value, onChange, onPlaceSelect, plac
         }
       });
     }).catch(() => {});
+
+    // アンマウント時の後始末。この入力欄は「車あり」トグルやメンバー追加/削除で
+    // マウント/アンマウントされるため、リスナーを解放しないと古いインスタンスが残留し、
+    // サジェストのクリックが誤動作する（先頭候補に吸われたように見える）原因になる。
+    return () => {
+      cancelled = true;
+      initializedRef.current = false;
+      if (autocomplete && window.google?.maps?.event) {
+        google.maps.event.clearInstanceListeners(autocomplete);
+      }
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

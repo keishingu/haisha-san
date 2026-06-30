@@ -6,7 +6,16 @@ import { SharePlanPayload } from '@/lib/types';
 import { buildShareUrl } from '@/lib/share-url/shareUrl';
 import { buildSharePayload } from '@/lib/share-url/payload';
 import { buildTransitStationRouteUrl } from '@/lib/google-maps/links';
+import { getGroupStyle, getGroupLabel } from '@/lib/ui/groupStyle';
 import { usePlan } from '../PlanProvider';
+
+function GroupBadge({ groupId }: { groupId: string }) {
+  return (
+    <span className={`ml-1 inline-block align-middle text-xs px-1.5 py-0.5 rounded border ${getGroupStyle(groupId).badgeClass}`}>
+      {getGroupLabel(groupId)}
+    </span>
+  );
+}
 
 export default function ResultPage() {
   const router = useRouter();
@@ -77,7 +86,14 @@ export default function ResultPage() {
                 車{index + 1}: {driver?.name}さんの車
               </h3>
               <div className="mb-2">
-                <span className="font-medium">乗車:</span> {[driver?.name, ...passengers.map((p) => p?.name)].join(', ')}
+                <span className="font-medium">乗車:</span>{' '}
+                {[driver, ...passengers].map((m, i) => (
+                  <span key={m?.id ?? i}>
+                    {i > 0 && ', '}
+                    {m?.name}
+                    {m?.groupId && <GroupBadge groupId={m.groupId} />}
+                  </span>
+                ))}
               </div>
               <div className="mb-2">
                 <span className="font-medium">集合地点:</span>{' '}
@@ -144,7 +160,10 @@ export default function ResultPage() {
               const member = resultMembers.find((m) => m.id === top.memberId);
               return (
                 <div key={index} className="mb-2 last:mb-0">
-                  <div className="font-medium">{member?.name}</div>
+                  <div className="font-medium">
+                    {member?.name}
+                    {member?.groupId && <GroupBadge groupId={member.groupId} />}
+                  </div>
                   <div className="text-sm text-gray-500">
                     理由: {top.reason === 'seat_shortage' ? '席不足' : top.reason === 'no_vehicle' ? '車なし' : '手動指定'}
                   </div>

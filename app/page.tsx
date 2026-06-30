@@ -12,6 +12,7 @@ import { getApiStatus } from '@/lib/google-maps/client';
 import { buildAddressBookCsv, parseAddressBookCsv, AddressBookParseError } from '@/lib/io/addressBook';
 import { usePlan } from './PlanProvider';
 import AutocompleteInput from '@/components/AutocompleteInput';
+import { GROUP_OPTIONS, getGroupStyle } from '@/lib/ui/groupStyle';
 
 export default function HomePage() {
   const router = useRouter();
@@ -121,6 +122,12 @@ export default function HomePage() {
       setCalculating(false);
     }
   };
+
+  // CSV取り込み等で生じた 1〜9 以外のグループID（重複排除・整列）。
+  // どのメンバーのピッカーにも候補として出し、既存グループへの追加を可能にする。
+  const customGroupIds = Array.from(
+    new Set(members.map((m) => m.groupId).filter((g): g is string => !!g && !GROUP_OPTIONS.includes(g)))
+  ).sort();
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
@@ -233,22 +240,51 @@ export default function HomePage() {
                 )}
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-gray-700">同乗グループ:</span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
+                  {member.groupId && (
+                    <span className={`inline-block w-3 h-3 rounded-full ${getGroupStyle(member.groupId).dotClass}`} />
+                  )}
+                  <select
                     value={member.groupId || ''}
-                    onChange={(e) => updateMember(member.id, { groupId: e.target.value.trim() || undefined })}
-                    placeholder="番号"
-                    className="w-16 p-1 border border-gray-300 rounded text-center"
-                  />
+                    onChange={(e) => updateMember(member.id, { groupId: e.target.value || undefined })}
+                    className="p-1 border border-gray-300 rounded text-sm"
+                  >
+                    <option value="">なし</option>
+                    {GROUP_OPTIONS.map((g) => (
+                      <option key={g} value={g}>
+                        グループ{g}
+                      </option>
+                    ))}
+                    {/* CSV取り込み等で生じた 1〜9 以外のグループIDは、どのメンバーの
+                        ピッカーにも候補として出し、既存グループへ別メンバーを追加できるようにする */}
+                    {customGroupIds.map((g) => (
+                      <option key={g} value={g}>
+                        グループ{g}
+                      </option>
+                    ))}
+                  </select>
                   <span className="text-sm text-gray-500">同じ番号は同じ車</span>
                 </div>
               </div>
               {member.isDriver && (
                 <div className="mt-2">
-                  <label className="block text-sm text-gray-700 mb-1">
-                    指定集合場所（任意・自宅と別の集合場所を指定する場合）
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm text-gray-700">
+                      指定集合場所（任意・自宅と別の集合場所を指定する場合）
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateMember(member.id, {
+                          meetingPointInput: member.addressInput || undefined,
+                          meetingPointLocation: member.location,
+                        })
+                      }
+                      disabled={!member.addressInput.trim()}
+                      className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      🏠 自宅を集合場所にする
+                    </button>
+                  </div>
                   <AutocompleteInput
                     value={member.meetingPointInput || ''}
                     onChange={(val) =>
