@@ -16,8 +16,14 @@ describe('groupStyle', () => {
     expect(new Set(dots).size).toBe(GROUP_OPTIONS.length);
   });
 
-  it('パレットを超える番号も剰余で安全に色を返すこと', () => {
-    expect(getGroupStyle('10')).toEqual(getGroupStyle('1'));
+  it('1〜9以外のIDの色は prefix ではなく文字列全体から安定的に決まること', () => {
+    // 同じ文字列なら常に同じ色（決定的）。
+    expect(getGroupStyle('10')).toEqual(getGroupStyle('10'));
+    expect(getGroupStyle('01')).toEqual(getGroupStyle('01'));
+    // prefix の parseInt（"01"/"10"→1）に依存していないこと: それぞれ別の色に割り当たる。
+    // （9色パレットのため全組合せの非衝突は保証しないが、この代表ケースでは別色になる。）
+    expect(getGroupStyle('10')).not.toEqual(getGroupStyle('1'));
+    expect(getGroupStyle('01')).not.toEqual(getGroupStyle('1'));
   });
 
   it('数字以外のIDでも安定して同じ色を返すこと', () => {
@@ -30,8 +36,10 @@ describe('groupStyle', () => {
     expect(getGroupLabel('9')).toBe('グループ⑨');
   });
 
-  it('範囲外や数字以外はそのまま付与すること', () => {
+  it('文字列全体が1〜9でない場合は丸数字にせずそのまま付与すること', () => {
     expect(getGroupLabel('10')).toBe('グループ10');
+    expect(getGroupLabel('01')).toBe('グループ01');
+    expect(getGroupLabel('1A')).toBe('グループ1A');
     expect(getGroupLabel('A')).toBe('グループA');
   });
 });

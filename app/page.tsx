@@ -248,6 +248,10 @@ export default function HomePage() {
                         グループ{g}
                       </option>
                     ))}
+                    {/* CSV取り込み等で 1〜9 以外のグループIDが入った場合も選択状態を保てるようにする */}
+                    {member.groupId && !GROUP_OPTIONS.includes(member.groupId) && (
+                      <option value={member.groupId}>グループ{member.groupId}</option>
+                    )}
                   </select>
                   <span className="text-sm text-gray-500">同じ番号は同じ車</span>
                 </div>

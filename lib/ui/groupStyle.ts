@@ -24,25 +24,24 @@ export const GROUP_OPTIONS: string[] = PALETTE.map((_, i) => String(i + 1));
 
 const CIRCLED = '①②③④⑤⑥⑦⑧⑨';
 
-// groupId を 0 始まりのパレット添字に変換する。数字以外は文字コードから安定的に割り当てる。
+// groupId を 0 始まりのパレット添字に変換する。
+// ピッカーの正規値(1〜9)は番号順の見やすい色に割り当てる。それ以外（CSV由来の
+// "10"/"01"/"1A" 等。プランナーは完全一致の文字列でグループ化する）は、prefix の
+// parseInt で別グループと衝突しないよう、文字列全体から安定したハッシュで色を決める。
 function paletteIndex(groupId: string): number {
-  const n = parseInt(groupId, 10);
-  if (Number.isFinite(n)) {
-    // 1始まりの番号を 0 始まりに。負や 0 も剰余で安全に丸める。
-    return ((n - 1) % PALETTE.length + PALETTE.length) % PALETTE.length;
-  }
+  if (/^[1-9]$/.test(groupId)) return parseInt(groupId, 10) - 1;
   let hash = 0;
-  for (let i = 0; i < groupId.length; i++) hash = (hash + groupId.charCodeAt(i)) % PALETTE.length;
-  return hash;
+  for (let i = 0; i < groupId.length; i++) hash = (hash * 31 + groupId.charCodeAt(i)) >>> 0;
+  return hash % PALETTE.length;
 }
 
 export function getGroupStyle(groupId: string): GroupStyle {
   return PALETTE[paletteIndex(groupId)];
 }
 
-// 「グループ①」のような表示ラベル。1〜9は丸数字、それ以外はそのまま付与する。
+// 「グループ①」のような表示ラベル。文字列全体が 1〜9 のときだけ丸数字にし、
+// それ以外（"10"/"01"/"1A" 等）は値をそのまま付与する（prefix だけで丸数字化しない）。
 export function getGroupLabel(groupId: string): string {
-  const n = parseInt(groupId, 10);
-  if (Number.isFinite(n) && n >= 1 && n <= 9) return `グループ${CIRCLED[n - 1]}`;
+  if (/^[1-9]$/.test(groupId)) return `グループ${CIRCLED[parseInt(groupId, 10) - 1]}`;
   return `グループ${groupId}`;
 }
