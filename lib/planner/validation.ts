@@ -46,6 +46,35 @@ export function validateInputs(members: Member[], destination: Destination): Val
     warnings.push(`全員を乗せるにはあと${shortage}席足りません。乗車できないメンバーは公共交通で目的地へ向かう案として表示します。`);
   }
 
+  // 同乗グループの整合性チェック
+  const groups = new Map<string, Member[]>();
+  for (const m of members) {
+    const gid = m.groupId?.trim();
+    if (!gid) continue;
+    groups.set(gid, [...(groups.get(gid) ?? []), m]);
+  }
+  const maxCapacity = drivers.reduce((max, d) => Math.max(max, d.vehicleCapacity || 0), 0);
+  for (const [gid, groupMembers] of groups) {
+    const groupDrivers = groupMembers.filter(m => m.isDriver);
+    // 同一グループにドライバーが複数いると1台にまとめられないため、計算前にエラーで止める。
+    if (groupDrivers.length > 1) {
+      errors.push(`同乗グループ「${gid}」に車ありメンバーが${groupDrivers.length}人います。1つのグループに車ありは1人までにしてください。`);
+      continue;
+    }
+    const passengers = groupMembers.filter(m => !m.isDriver);
+    if (passengers.length === 0) continue;
+    if (groupDrivers.length === 1) {
+      // ドライバー固定グループは「同じ車」がハード制約のため、定員を超える指定は
+      // 分割せず計算前にエラーで止める（定員未設定は別途エラーになるのでここでは除外）。
+      const capacity = groupDrivers[0].vehicleCapacity;
+      if (capacity && passengers.length > capacity - 1) {
+        errors.push(`同乗グループ「${gid}」は「${groupDrivers[0].name}」の定員(${capacity}人)では乗り切れません（同乗${passengers.length}人）。グループの人数を減らすか定員を増やしてください。`);
+      }
+    } else if (passengers.length > Math.max(0, maxCapacity - 1)) {
+      warnings.push(`同乗グループ「${gid}」(${passengers.length}人)を1台にまとめられる車がありません。公共交通で目的地へ向かう案になります。`);
+    }
+  }
+
   return {
     isValid: errors.length === 0,
     errors,

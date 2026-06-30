@@ -98,6 +98,104 @@ describe('calculateAssignment', () => {
     expect(result.transitOnlyPlans).toHaveLength(0);
   });
 
+  it('同乗グループのメンバーが同じ車に割り当てられること', async () => {
+    const members: Member[] = [
+      { id: '1', name: '田中', addressInput: '東京都新宿区', location: { lat: 35.6938, lng: 139.7034 }, isDriver: true, vehicleCapacity: 4 },
+      { id: '2', name: '佐藤', addressInput: '神奈川県横浜市', location: { lat: 35.4437, lng: 139.6380 }, isDriver: true, vehicleCapacity: 4 },
+      // 鈴木と高橋は地理的に別々のドライバーに近いが、同じグループなので同じ車になる。
+      { id: '3', name: '鈴木', addressInput: '東京都中野区', location: { lat: 35.7077, lng: 139.6639 }, isDriver: false, groupId: '1' },
+      { id: '4', name: '高橋', addressInput: '神奈川県川崎市', location: { lat: 35.5308, lng: 139.7029 }, isDriver: false, groupId: '1' },
+    ];
+
+    const result = await calculateAssignment(members, destination, meetingCandidates);
+
+    const carWith3 = result.vehiclePlans.find((vp) => vp.passengerIds.includes('3'));
+    expect(carWith3).toBeDefined();
+    expect(carWith3!.passengerIds).toContain('4');
+    expect(result.transitOnlyPlans).toHaveLength(0);
+  });
+
+  it('グループにドライバーが含まれる場合そのドライバーの車に固定されること', async () => {
+    const members: Member[] = [
+      // 佐藤の方が鈴木に近いが、鈴木は田中とグループなので田中の車に乗る。
+      { id: '1', name: '田中', addressInput: '神奈川県横浜市', location: { lat: 35.4437, lng: 139.6380 }, isDriver: true, vehicleCapacity: 4, groupId: '1' },
+      { id: '2', name: '佐藤', addressInput: '東京都中野区', location: { lat: 35.7077, lng: 139.6639 }, isDriver: true, vehicleCapacity: 4 },
+      { id: '3', name: '鈴木', addressInput: '東京都中野区', location: { lat: 35.7077, lng: 139.6639 }, isDriver: false, groupId: '1' },
+    ];
+
+    const result = await calculateAssignment(members, destination, meetingCandidates);
+
+    const tanakaCar = result.vehiclePlans.find((vp) => vp.driverId === '1');
+    expect(tanakaCar!.passengerIds).toContain('3');
+    const satoCar = result.vehiclePlans.find((vp) => vp.driverId === '2');
+    expect(satoCar!.passengerIds).not.toContain('3');
+  });
+
+  it('ドライバー無しグループが先に並んでいてもドライバー固定グループの席が確保されること', async () => {
+    // member一覧では先にドライバー無しグループ(2)が登場するが、ドライバー固定グループ(1)の
+    // 席を先取りして固定グループのメンバーを押し出してはいけない。田中の定員は2（空席1）。
+    const members: Member[] = [
+      { id: '1', name: '田中', addressInput: '東京都新宿区', location: { lat: 35.6938, lng: 139.7034 }, isDriver: true, vehicleCapacity: 2, groupId: '1' },
+      // ドライバー無しグループ2。田中に近いので放っておくと田中の唯一の空席を取りに行く。
+      { id: '2', name: '佐藤', addressInput: '東京都新宿区', location: { lat: 35.6938, lng: 139.7034 }, isDriver: false, groupId: '2' },
+      // 田中とグループのメンバー（後に登場）。固定なので田中の空席はこの人のために確保される。
+      { id: '3', name: '鈴木', addressInput: '東京都中野区', location: { lat: 35.7077, lng: 139.6639 }, isDriver: false, groupId: '1' },
+      // 佐藤を受けられるもう1台。
+      { id: '4', name: '高橋', addressInput: '東京都新宿区', location: { lat: 35.6938, lng: 139.7034 }, isDriver: true, vehicleCapacity: 4 },
+    ];
+
+    const result = await calculateAssignment(members, destination, meetingCandidates);
+
+    const tanakaCar = result.vehiclePlans.find((vp) => vp.driverId === '1');
+    expect(tanakaCar!.passengerIds).toEqual(['3']);
+    // 鈴木が公共交通に押し出されていないこと。
+    expect(result.transitOnlyPlans.map((t) => t.memberId)).not.toContain('3');
+  });
+
+  it('グループ全員を収められる車が無い場合は全員を公共交通組にすること', async () => {
+    const members: Member[] = [
+      { id: '1', name: '田中', addressInput: '東京都新宿区', location: { lat: 35.6938, lng: 139.7034 }, isDriver: true, vehicleCapacity: 2 }, // 空席1
+      { id: '2', name: '佐藤', addressInput: '東京都世田谷区', location: { lat: 35.6462, lng: 139.6527 }, isDriver: false, groupId: '1' },
+      { id: '3', name: '鈴木', addressInput: '東京都中野区', location: { lat: 35.7077, lng: 139.6639 }, isDriver: false, groupId: '1' },
+    ];
+
+    const result = await calculateAssignment(members, destination, meetingCandidates);
+
+    // グループをばらさず、2人とも公共交通組へ。
+    expect(result.vehiclePlans[0].passengerIds).toHaveLength(0);
+    const transitIds = result.transitOnlyPlans.map((t) => t.memberId).sort();
+    expect(transitIds).toEqual(['2', '3']);
+  });
+
+  it('ドライバー付きグループが定員を超える場合は分割せずグループ全員を公共交通組にすること', async () => {
+    // 田中の定員は2（同乗は1人まで）だが、グループ同乗者が2人。分割せず2人とも公共交通へ。
+    const members: Member[] = [
+      { id: '1', name: '田中', addressInput: '東京都新宿区', location: { lat: 35.6938, lng: 139.7034 }, isDriver: true, vehicleCapacity: 2, groupId: '1' },
+      { id: '2', name: '佐藤', addressInput: '東京都世田谷区', location: { lat: 35.6462, lng: 139.6527 }, isDriver: false, groupId: '1' },
+      { id: '3', name: '鈴木', addressInput: '東京都中野区', location: { lat: 35.7077, lng: 139.6639 }, isDriver: false, groupId: '1' },
+    ];
+
+    const result = await calculateAssignment(members, destination, meetingCandidates);
+
+    const tanakaCar = result.vehiclePlans.find((vp) => vp.driverId === '1');
+    expect(tanakaCar!.passengerIds).toHaveLength(0);
+    expect(result.transitOnlyPlans.map((t) => t.memberId).sort()).toEqual(['2', '3']);
+  });
+
+  it('ドライバーの指定集合場所が集合地点として使われること', async () => {
+    const meetingPointLocation: LatLng = { lat: 35.6896, lng: 139.7006 }; // 新宿駅
+    const members: Member[] = [
+      { id: '1', name: '田中', addressInput: '東京都新宿区', location: { lat: 35.6938, lng: 139.7034 }, isDriver: true, vehicleCapacity: 4, meetingPointInput: '新宿駅西口', meetingPointLocation },
+      { id: '2', name: '佐藤', addressInput: '東京都世田谷区', location: { lat: 35.6462, lng: 139.6527 }, isDriver: false },
+    ];
+
+    const result = await calculateAssignment(members, destination, meetingCandidates);
+
+    expect(result.vehiclePlans[0].meetingPoint?.name).toBe('新宿駅西口');
+    expect(result.vehiclePlans[0].meetingPoint?.location).toEqual(meetingPointLocation);
+    expect(result.vehiclePlans[0].meetingPoint?.placeType).toBe('custom');
+  });
+
   it('Google Mapsリンクが生成されること', async () => {
     const members: Member[] = [
       { id: '1', name: '田中', addressInput: '東京都新宿区', location: { lat: 35.6938, lng: 139.7034 }, isDriver: true, vehicleCapacity: 2 },

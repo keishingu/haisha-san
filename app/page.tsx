@@ -101,8 +101,15 @@ export default function HomePage() {
       const { result, resolvedMembers, destinationLocation } = await buildPlan(members, destination, optimizationMode);
       setPlan({
         planResult: result,
-        // 氏名のみを結果表示用に保持。住所/緯度経度は保持しない。
-        resultMembers: resolvedMembers.map((m) => ({ ...m, addressInput: '', location: undefined })),
+        // 氏名のみを結果表示用に保持。住所/緯度経度・指定集合場所の住所/座標は保持しない。
+        // （集合地点は planResult 側に必要な分だけ含まれる。）
+        resultMembers: resolvedMembers.map((m) => ({
+          ...m,
+          addressInput: '',
+          location: undefined,
+          meetingPointInput: undefined,
+          meetingPointLocation: undefined,
+        })),
         destinationLabel: destination.addressInput,
         destinationLocation,
         shareText: generateShareText(resolvedMembers, destination.addressInput, result),
@@ -224,7 +231,40 @@ export default function HomePage() {
                     <span className="text-sm text-gray-500">人（含むドライバー）</span>
                   </div>
                 )}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-700">同乗グループ:</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={member.groupId || ''}
+                    onChange={(e) => updateMember(member.id, { groupId: e.target.value.trim() || undefined })}
+                    placeholder="番号"
+                    className="w-16 p-1 border border-gray-300 rounded text-center"
+                  />
+                  <span className="text-sm text-gray-500">同じ番号は同じ車</span>
+                </div>
               </div>
+              {member.isDriver && (
+                <div className="mt-2">
+                  <label className="block text-sm text-gray-700 mb-1">
+                    指定集合場所（任意・自宅と別の集合場所を指定する場合）
+                  </label>
+                  <AutocompleteInput
+                    value={member.meetingPointInput || ''}
+                    onChange={(val) =>
+                      updateMember(member.id, {
+                        meetingPointInput: val || undefined,
+                        meetingPointLocation: undefined,
+                      })
+                    }
+                    onPlaceSelect={(location, addr) =>
+                      updateMember(member.id, { meetingPointInput: addr, meetingPointLocation: location })
+                    }
+                    placeholder="例: 新宿駅西口"
+                    className="w-full p-2 border border-gray-300 rounded"
+                  />
+                </div>
+              )}
             </div>
           ))}
 
