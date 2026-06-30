@@ -272,7 +272,7 @@ export default function ResultPage() {
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">短縮URL（{SHORT_LINK_TTL_DAYS}日で自動失効）:</label>
                 <p className="text-xs text-gray-500 mb-1">
-                  ※ 外部サービスは使わず、共有データはこのアプリのサーバーに{SHORT_LINK_TTL_DAYS}日間だけ一時保存されます。期限が切れるとリンクは無効になります。
+                  ※ TinyURLのような外部の短縮URLサービスは使いません。共有データはこのアプリが管理するRedis（Upstash）に{SHORT_LINK_TTL_DAYS}日間だけ一時保存され、期限が切れるとリンクは無効になります。
                 </p>
                 {shortUrl ? (
                   <div className="flex gap-2">
