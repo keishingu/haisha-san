@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { SharePlanPayload } from '@/lib/types';
 import { buildShareUrl } from '@/lib/share-url/shareUrl';
 import { buildSharePayload } from '@/lib/share-url/payload';
-import { shortenShareUrl } from '@/lib/share-url/shorten';
+import { createShortLink } from '@/lib/short-link/client';
+import { SHORT_LINK_TTL_DAYS } from '@/lib/short-link/constants';
 import { buildTransitStationRouteUrl } from '@/lib/google-maps/links';
 import { getGroupStyle, getGroupLabel } from '@/lib/ui/groupStyle';
 import { usePlan } from '../PlanProvider';
@@ -27,6 +28,7 @@ export default function ResultPage() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [notes, setNotes] = useState<string>('');
   const [shortUrl, setShortUrl] = useState<string>('');
+  const [shortUrlTtlDays, setShortUrlTtlDays] = useState<number | undefined>(undefined);
   const [isShortening, setIsShortening] = useState(false);
   const [shortenError, setShortenError] = useState<string | undefined>(undefined);
 
@@ -45,6 +47,7 @@ export default function ResultPage() {
     setShareUrl(created.shareUrl);
     setShareWarning(created.warning);
     setShortUrl('');
+    setShortUrlTtlDays(undefined);
     setShortenError(undefined);
     setShowShareModal(true);
   };
@@ -53,8 +56,9 @@ export default function ResultPage() {
     setIsShortening(true);
     setShortenError(undefined);
     try {
-      const result = await shortenShareUrl(shareUrl);
-      setShortUrl(result);
+      const result = await createShortLink(shareUrl);
+      setShortUrl(result.shortUrl);
+      setShortUrlTtlDays(result.ttlDays);
     } catch (e) {
       setShortenError(e instanceof Error ? e.message : '短縮URLの作成に失敗しました。');
     } finally {
@@ -253,7 +257,7 @@ export default function ResultPage() {
                 </ul>
               </div>
               <p className="text-xs text-gray-500 mb-3">
-                ※ URLを知っている人は閲覧できます。短縮URLサービスを使う場合、共有データはそのサービスにも渡ります。
+                ※ URLを知っている人は閲覧できます。共有URL自体に有効期限はありません。
               </p>
               {shareWarning && <p className="text-sm text-orange-700 mb-3">{shareWarning}</p>}
               <div className="mb-4">
@@ -266,9 +270,9 @@ export default function ResultPage() {
                 </div>
               </div>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">短縮URL（tinyurl.com）:</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">短縮URL（{SHORT_LINK_TTL_DAYS}日で自動失効）:</label>
                 <p className="text-xs text-gray-500 mb-1">
-                  ※ 短縮URLを開くとtinyurl.comの確認ページを経由してから共有ページに移動します。
+                  ※ 外部サービスは使わず、共有データはこのアプリのサーバーに{SHORT_LINK_TTL_DAYS}日間だけ一時保存されます。期限が切れるとリンクは無効になります。
                 </p>
                 {shortUrl ? (
                   <div className="flex gap-2">
@@ -285,6 +289,9 @@ export default function ResultPage() {
                   >
                     {isShortening ? '作成中...' : '短縮URLを作成'}
                   </button>
+                )}
+                {shortUrlTtlDays !== undefined && (
+                  <p className="text-xs text-gray-500 mt-1">この短縮URLは発行から{shortUrlTtlDays}日後に自動的に無効になります。</p>
                 )}
                 {shortenError && <p className="text-sm text-red-700 mt-1">{shortenError}</p>}
               </div>
