@@ -57,7 +57,11 @@ export default function SharePage() {
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">{payload.title || '配車プランナー - 配車計画'}</h1>
+        <h1 className="text-2xl font-bold text-gray-800 mb-6">
+          <a href="/" className="hover:underline">
+            {payload.title || '配車プランナー - 配車計画'}
+          </a>
+        </h1>
 
         <div className="bg-white rounded-lg shadow-md p-4 mb-4">
           <h2 className="text-lg font-semibold text-gray-700 mb-2">目的地</h2>

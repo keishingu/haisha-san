@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { SharePlanPayload } from '@/lib/types';
 import { buildShareUrl } from '@/lib/share-url/shareUrl';
 import { buildSharePayload } from '@/lib/share-url/payload';
+import { createShortLink } from '@/lib/short-link/client';
+import { SHORT_LINK_TTL_DAYS } from '@/lib/short-link/constants';
 import { buildTransitStationRouteUrl } from '@/lib/google-maps/links';
 import { getGroupStyle, getGroupLabel } from '@/lib/ui/groupStyle';
 import { usePlan } from '../PlanProvider';
@@ -25,6 +27,10 @@ export default function ResultPage() {
   const [shareWarning, setShareWarning] = useState<string | undefined>(undefined);
   const [showShareModal, setShowShareModal] = useState(false);
   const [notes, setNotes] = useState<string>('');
+  const [shortUrl, setShortUrl] = useState<string>('');
+  const [shortUrlTtlDays, setShortUrlTtlDays] = useState<number | undefined>(undefined);
+  const [isShortening, setIsShortening] = useState(false);
+  const [shortenError, setShortenError] = useState<string | undefined>(undefined);
 
   // 直接アクセス/リロードで結果が無い場合は入力画面へ戻す（結果はメモリ保持のため）。
   useEffect(() => {
@@ -40,7 +46,24 @@ export default function ResultPage() {
     const created = buildShareUrl(payload);
     setShareUrl(created.shareUrl);
     setShareWarning(created.warning);
+    setShortUrl('');
+    setShortUrlTtlDays(undefined);
+    setShortenError(undefined);
     setShowShareModal(true);
+  };
+
+  const handleShortenUrl = async () => {
+    setIsShortening(true);
+    setShortenError(undefined);
+    try {
+      const result = await createShortLink(shareUrl);
+      setShortUrl(result.shortUrl);
+      setShortUrlTtlDays(result.ttlDays);
+    } catch (e) {
+      setShortenError(e instanceof Error ? e.message : '短縮URLの作成に失敗しました。');
+    } finally {
+      setIsShortening(false);
+    }
   };
 
   const handleCopy = async (text: string, label: string) => {
@@ -234,7 +257,7 @@ export default function ResultPage() {
                 </ul>
               </div>
               <p className="text-xs text-gray-500 mb-3">
-                ※ URLを知っている人は閲覧できます。短縮URLサービスを使う場合、共有データはそのサービスにも渡ります。
+                ※ URLを知っている人は閲覧できます。共有URL自体に有効期限はありません。
               </p>
               {shareWarning && <p className="text-sm text-orange-700 mb-3">{shareWarning}</p>}
               <div className="mb-4">
@@ -245,6 +268,29 @@ export default function ResultPage() {
                     コピー
                   </button>
                 </div>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">短縮URL（{SHORT_LINK_TTL_DAYS}日で自動失効）:</label>
+                {shortUrl ? (
+                  <div className="flex gap-2">
+                    <input type="text" value={shortUrl} readOnly className="flex-1 p-2 border border-gray-300 rounded text-sm bg-gray-50" />
+                    <button onClick={() => handleCopy(shortUrl, '短縮URL')} className="px-3 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm">
+                      コピー
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleShortenUrl}
+                    disabled={isShortening}
+                    className="px-3 py-2 bg-blue-100 text-blue-800 rounded hover:bg-blue-200 text-sm disabled:opacity-50"
+                  >
+                    {isShortening ? '作成中...' : '短縮URLを作成'}
+                  </button>
+                )}
+                {shortUrlTtlDays !== undefined && (
+                  <p className="text-xs text-gray-500 mt-1">この短縮URLは発行から{shortUrlTtlDays}日後に自動的に無効になります。</p>
+                )}
+                {shortenError && <p className="text-sm text-red-700 mt-1">{shortenError}</p>}
               </div>
               <div className="flex justify-between">
                 <a href={shareUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 text-blue-600 underline text-sm self-center">
