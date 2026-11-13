@@ -64,6 +64,25 @@ describe("createPlan", () => {
     ).rejects.toThrow(/メンバーか配車係/);
   });
 
+  test("同じ同乗グループに車を出す人が2人いれば、計算せずエラーにする", async () => {
+    await seedOrigins();
+    await expect(
+      createPlan(db, sampleGateway, {
+        actor: { cairnUserId: "d", role: "member" },
+        project,
+        projectMembers,
+        input: {
+          ...input,
+          participants: [
+            { kind: "member" as const, cairnUserId: "d", included: true, canDrive: true, vehicleCapacity: 4, groupId: "1" },
+            { kind: "member" as const, cairnUserId: "p", included: true, canDrive: true, vehicleCapacity: 4, groupId: "1" },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/同乗グループ「1」に車ありメンバーが2人います/);
+    expect(await listPlansForProject(db, "p1")).toHaveLength(0);
+  });
+
   test("目的地を特定できなければエラーにして保存しない", async () => {
     await seedOrigins();
     await expect(

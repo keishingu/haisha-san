@@ -6,7 +6,8 @@ import { cache } from "react";
 import { getDb } from "@/db";
 import { members } from "@/db/schema";
 import { listAllWorkspaceMembers } from "@/lib/cairn/client";
-import type { MemberRole } from "./membership";
+import { CairnError } from "@/lib/cairn/errors";
+import { findActiveWorkspaceMember, type MemberRole } from "./membership";
 import { readSession } from "./session";
 
 export type CurrentMember = {
@@ -18,6 +19,9 @@ export type CurrentMember = {
 /**
  * ログイン中の部員（Data Access Layer）。画面・Server Action・Route Handler はここを通す。
  * セッションが無い・不正・部員の行が無ければログイン画面へ。
+ * セッションは14日もつので、ワークスペースから外れた部員がその間に住所やプランを見られないよう、
+ * リクエストごとに Cairn の active なメンバーかを確かめる（list_members は60秒キャッシュ）。
+ * 確かめられないときも通さない。
  */
 export const getCurrentMember = cache(async (): Promise<CurrentMember> => {
   const session = await readSession();
@@ -28,6 +32,19 @@ export const getCurrentMember = cache(async (): Promise<CurrentMember> => {
     .from(members)
     .where(eq(members.cairnUserId, session.sub));
   if (!row) redirect("/login");
+
+  let workspaceMembers;
+  try {
+    workspaceMembers = await listAllWorkspaceMembers();
+  } catch (error) {
+    if (error instanceof CairnError) {
+      console.error("[getCurrentMember] Cairn で部員を確かめられません", error);
+      redirect("/login?error=cairn_unavailable");
+    }
+    throw error;
+  }
+  if (!findActiveWorkspaceMember(workspaceMembers, session.sub)) redirect("/login?error=not_member");
+
   return { cairnUserId: session.sub, role: row.role, via: session.via };
 });
 

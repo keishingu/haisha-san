@@ -4,6 +4,7 @@ import { plans, type Plan } from "@/db/schema";
 import { DomainError } from "@/lib/errors";
 import type { MapsGateway } from "@/lib/google-maps/gateway";
 import { buildPlan } from "@/lib/planner/buildPlan";
+import { validateInputs } from "@/lib/planner/validation";
 import type { OptimizationMode } from "@/lib/planner/optimization";
 import type { CairnProject, CairnProjectMember } from "@/lib/cairn/schemas";
 import type { MemberRole } from "@/lib/auth/membership";
@@ -40,6 +41,9 @@ export async function createPlan(
     projectMemberNames: new Map(args.projectMembers.map((m) => [m.userId, m.name])),
     origins,
   });
+  // 同乗グループに車を出す人が2人以上いる・定員を超えるなど、割り当てが前提にしている条件を計算前に確かめる
+  const validation = validateInputs(members, { addressInput: input.destinationInput });
+  if (!validation.isValid) throw new DomainError(validation.errors.join("\n"));
 
   let destinationLocation;
   if (args.project.placeId && input.destinationInput === args.project.location) {
