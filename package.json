@@ -5,29 +5,42 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "vercel-build": "node scripts/vercel-migrate.mjs && next build",
     "start": "next start",
-    "lint": "next lint",
+    "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:dev-migrate": "node scripts/dev-db-migrate.mjs",
+    "dev:cairn": "node scripts/dev-cairn-mcp.mjs"
   },
   "dependencies": {
-    "lz-string": "^1.5.0",
-    "next": "^15.1.6",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@neondatabase/serverless": "^1.2.0",
+    "drizzle-orm": "^0.45.4",
+    "jose": "^6.2.15",
+    "next": "16.4.3",
+    "openid-client": "^6.8.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.14",
     "@tailwindcss/postcss": "^4.0.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@types/google.maps": "^3.58.1",
-    "@types/lz-string": "^1.5.0",
     "@types/node": "^22.10.7",
-    "@types/react": "^19.0.7",
-    "@types/react-dom": "^19.0.3",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.11",
     "jsdom": "^26.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.3",
-    "vitest": "^3.0.2"
-  }
+    "vitest": "^5.0.5"
+  },
+  "packageManager": "pnpm@11.1.3"
 }

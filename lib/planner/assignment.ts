@@ -1,6 +1,6 @@
 import { Member, MeetingCandidate, VehiclePlan, TransitOnlyPlan, PlanResult, LatLng, TransitRouteStep } from '../types';
 import { buildGoogleMapsDirectionsUrl, buildDestinationUrl } from '../google-maps/links';
-import { getDistanceMatrix, getTransitRoute } from '../google-maps/client';
+import type { RouteApis } from '../google-maps/gateway';
 import { OptimizationMode, ScoreWeights, OPTIMIZATION_WEIGHTS, DEFAULT_OPTIMIZATION_MODE } from './optimization';
 
 function haversineDistance(a: LatLng, b: LatLng): number {
@@ -138,7 +138,7 @@ export async function calculateAssignment(
   members: Member[],
   destination: LatLng,
   meetingCandidates: MeetingCandidate[],
-  useRealApi: boolean = false,
+  routeApis: RouteApis | null = null,
   mode: OptimizationMode = DEFAULT_OPTIMIZATION_MODE,
   candidateProvider?: (center: LatLng) => Promise<MeetingCandidate[]>
 ): Promise<PlanResult> {
@@ -313,7 +313,7 @@ export async function calculateAssignment(
   }
 
   let realDurations: Map<string, number> | null = null;
-  if (useRealApi) {
+  if (routeApis) {
     try {
       const origins: LatLng[] = [];
       const dests: LatLng[] = [];
@@ -328,7 +328,7 @@ export async function calculateAssignment(
       }
 
       if (origins.length > 0) {
-        const matrix = await getDistanceMatrix(origins, dests);
+        const matrix = await routeApis.distanceMatrix(origins, dests);
         realDurations = new Map();
         let idx = 0;
         for (const [, entry] of assignments) {
@@ -343,26 +343,31 @@ export async function calculateAssignment(
         }
       }
     } catch {
-      // Distance Matrix失敗時は推定値を使用
+      // 取得できなければ概算を使い、そのことを注意事項で知らせる
+      warnings.push('車の移動時間を取得できなかったため、直線距離からの概算を表示しています。');
     }
   }
 
   // 車なしメンバーの集合経路（乗車駅→降車駅）を取得する。結果の妥当性検証用で、推定時間には影響しない。
-  if (useRealApi) {
+  if (routeApis) {
+    let transitFailed = false;
     for (const [, entry] of assignments) {
       for (const passengerId of entry.passengerIds) {
         const passenger = members.find(m => m.id === passengerId);
         if (!passenger?.location) continue;
         try {
-          const route = await getTransitRoute(passenger.location, entry.meetingPoint.location);
+          const route = await routeApis.transitRoute(passenger.location, entry.meetingPoint.location);
           if (route.steps.length > 0) {
             entry.passengerTransitRoutes.set(passengerId, route.steps);
           }
-        } catch (err) {
-          // 経路取得失敗時は詳細経路なしで継続（時間の推定/算出には影響しない）。原因切り分け用にブラウザコンソールへ出力。
-          console.error('[transitRoute] 取得失敗', err);
+        } catch {
+          // 経路が取れなくても割り当ては続ける（時間の推定には影響しない）。注意事項で知らせる
+          transitFailed = true;
         }
       }
+    }
+    if (transitFailed) {
+      warnings.push('一部のメンバーの、集合地点までの公共交通の経路を取得できませんでした。');
     }
   }
 

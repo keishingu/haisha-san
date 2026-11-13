@@ -19,13 +19,13 @@ const provider = async (center: LatLng): Promise<MeetingCandidate[]> => [
 
 describe('集合地点を車ごとにメンバー近くで選ぶ', () => {
   it('candidateProvider 無しでは渡されたグローバル候補（遠い）が使われること', async () => {
-    const r = await calculateAssignment(members, destination, farGlobal, false, 'balanced');
+    const r = await calculateAssignment(members, destination, farGlobal, null, 'balanced');
     const vp = r.vehiclePlans.find((v) => v.passengerIds.includes('p'))!;
     expect(vp.meetingPoint?.id).toBe('center');
   });
 
   it('candidateProvider 有りでは車のメンバー近くの集合地点へ置き換わること', async () => {
-    const r = await calculateAssignment(members, destination, farGlobal, false, 'balanced', provider);
+    const r = await calculateAssignment(members, destination, farGlobal, null, 'balanced', provider);
     const vp = r.vehiclePlans.find((v) => v.passengerIds.includes('p'))!;
     expect(vp.meetingPoint?.id).toBe('local');
     // メンバー(経度139.5x)の近くに来る＝遠いcenter(139.95)より小さい経度
@@ -47,7 +47,7 @@ describe('集合地点を車ごとにメンバー近くで選ぶ', () => {
       { id: 'gW', name: '西駅', address: '', location: { lat: 35.66, lng: 139.50 }, placeType: 'station' },
       { id: 'gE', name: '東駅', address: '', location: { lat: 35.66, lng: 140.00 }, placeType: 'station' },
     ];
-    const r = await calculateAssignment(two, destination, twoGlobals, false, 'balanced', provider);
+    const r = await calculateAssignment(two, destination, twoGlobals, null, 'balanced', provider);
     const carsWithPax = r.vehiclePlans.filter((v) => v.passengerIds.length > 0);
     expect(carsWithPax.length).toBe(2);
     const lngs = carsWithPax.map((v) => v.meetingPoint!.location.lng);

@@ -18,7 +18,9 @@ export type Member = {
   // 指定集合場所（ドライバー向け）。自宅とは別に「ここに集合して」を明示するための住所テキスト。
   // 設定された車はアルゴリズムによる集合地点の自動選定を行わず、この場所を使う。
   meetingPointInput?: string;
-  meetingPointLocation?: LatLng; // 指定集合場所の解決済み座標（ブラウザメモリ上のみ）
+  meetingPointLocation?: LatLng; // 指定集合場所の解決済み座標
+  // 出発地（自宅）を集合場所にする。座標は出発地の座標を使い、meetingPointInput は表示名にだけ使う。
+  meetingAtHome?: boolean;
 };
 
 export type Destination = {

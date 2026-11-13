@@ -1,12 +1,10 @@
 import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
 import './globals.css';
-import { PlanProvider } from './PlanProvider';
 
 export const metadata: Metadata = {
-  title: '配車プランナー',
-  description:
-    '複数人で同じ目的地へ車移動するときの配車・集合案を提案します。住所や氏名は保存しません。',
+  title: '配車さん',
+  description: '山行の参加メンバーと出発地から、車ごとの乗車メンバーと集合地点を提案します。',
 };
 
 export const viewport: Viewport = {
@@ -14,7 +12,8 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-const browserKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY;
+// 空文字のときに <head> へ空のテキストを描かないよう、真偽値にしてから使う
+const browserKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY || null;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -28,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </>
         )}
       </head>
-      <body>
+      <body className="bg-gray-50">
         {browserKey && (
           <Script
             id="gmaps-loader"
@@ -36,7 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             src={`https://maps.googleapis.com/maps/api/js?key=${browserKey}&libraries=places&language=ja&loading=async`}
           />
         )}
-        <PlanProvider>{children}</PlanProvider>
+        {children}
       </body>
     </html>
   );
