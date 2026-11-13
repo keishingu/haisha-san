@@ -1,6 +1,7 @@
 import "server-only";
 
 import { eq } from "drizzle-orm";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { getDb } from "@/db";
@@ -8,6 +9,7 @@ import { members } from "@/db/schema";
 import { listAllWorkspaceMembers } from "@/lib/cairn/client";
 import { CairnError } from "@/lib/cairn/errors";
 import { findActiveWorkspaceMember, type MemberRole } from "./membership";
+import { REQUEST_PATH_HEADER, loginUrlFor } from "./return-to";
 import { readSession } from "./session";
 
 export type CurrentMember = {
@@ -25,13 +27,14 @@ export type CurrentMember = {
  */
 export const getCurrentMember = cache(async (): Promise<CurrentMember> => {
   const session = await readSession();
-  if (!session) redirect("/login");
+  // ログイン後に、開こうとした画面（共有されたプランなど）へ戻す
+  if (!session) redirect(loginUrlFor((await headers()).get(REQUEST_PATH_HEADER)));
   const db = await getDb();
   const [row] = await db
     .select({ role: members.role })
     .from(members)
     .where(eq(members.cairnUserId, session.sub));
-  if (!row) redirect("/login");
+  if (!row) redirect(loginUrlFor((await headers()).get(REQUEST_PATH_HEADER)));
 
   let workspaceMembers;
   try {

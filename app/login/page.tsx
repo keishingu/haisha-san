@@ -62,7 +62,7 @@ async function LoginOptions({ searchParams }: { searchParams: PageProps<'/login'
 
       {devLogin && (
         <Link
-          href="/login/dev"
+          href={`/login/dev${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`}
           className="flex h-12 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 text-sm font-bold text-gray-600"
         >
           開発用ログイン（部員を選ぶ）

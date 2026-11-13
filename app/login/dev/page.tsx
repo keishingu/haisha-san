@@ -6,7 +6,7 @@ import { listAllWorkspaceMembers } from '@/lib/cairn/client';
 import { CairnError, PAT_REISSUE_GUIDE, cairnErrorMessage } from '@/lib/cairn/errors';
 import { devLogin } from './actions';
 
-export default function DevLoginPage() {
+export default function DevLoginPage(props: PageProps<'/login/dev'>) {
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-6 px-5 py-12">
       <div>
@@ -15,14 +15,16 @@ export default function DevLoginPage() {
         <p className="mt-2 text-sm leading-relaxed text-gray-600">ローカル開発用の入口です。本番では使えません。</p>
       </div>
       <Suspense fallback={<p className="text-sm text-gray-500">Cairn から部員を読み込み中…</p>}>
-        <MemberPicker />
+        <MemberPicker searchParams={props.searchParams} />
       </Suspense>
     </main>
   );
 }
 
-async function MemberPicker() {
+async function MemberPicker({ searchParams }: { searchParams: PageProps<'/login/dev'>['searchParams'] }) {
   await connection();
+  const params = await searchParams;
+  const returnTo = typeof params.returnTo === 'string' ? params.returnTo : '/';
   if (!isDevLoginEnabled(process.env)) notFound();
 
   let members;
@@ -45,6 +47,7 @@ async function MemberPicker() {
         <li key={m.userId} className="border-b border-gray-100 last:border-b-0">
           <form action={devLogin}>
             <input type="hidden" name="sub" value={m.userId} />
+            <input type="hidden" name="returnTo" value={returnTo} />
             <button type="submit" className="flex w-full items-center justify-between px-4 py-3 text-left">
               <span className="font-bold">{m.name}</span>
               <span className="text-xs text-gray-500">{m.profileAttributes.map((a) => a.name).join('・')}</span>

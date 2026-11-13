@@ -84,8 +84,10 @@ export async function buildPlan(
   // 車ごとに呼び出して、その車のメンバーに近い候補を取り直すために使う。
   const candidateProvider = (center: LatLng): Promise<MeetingCandidate[]> => maps.searchMeetingCandidates(center);
 
-  const candidates = await candidateProvider(searchCenter);
-  if (candidates.length === 0) {
+  // 全員が運転する・誰も運転しないときは集合地点が要らないので、検索しない（候補が無くてもプランを作れる）
+  const needsMeetingPoint = resolvedMembers.some(m => m.isDriver) && resolvedMembers.some(m => !m.isDriver);
+  const candidates = needsMeetingPoint ? await candidateProvider(searchCenter) : [];
+  if (needsMeetingPoint && candidates.length === 0) {
     throw new Error('集合地点候補が見つかりませんでした。メンバーの住所を確認してください。');
   }
 
