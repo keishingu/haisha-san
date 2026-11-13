@@ -70,6 +70,10 @@ describe("ログイン後の戻り先", () => {
     ["https://evil.example", "/"],
     ["//evil.example", "/"],
     ["/\\evil.example", "/"],
+    ["/\t/evil.example", "/"],
+    ["/\n/evil.example", "/"],
+    ["/%09/evil.example", "/%09/evil.example"],
+    ["/plans/abc?x=1#y", "/plans/abc?x=1#y"],
     [null, "/"],
   ])("%s は %s にする", (input, expected) => {
     expect(safeReturnTo(input)).toBe(expected);

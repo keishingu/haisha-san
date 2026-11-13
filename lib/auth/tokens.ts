@@ -113,10 +113,23 @@ export async function openLoginTransaction(
   }
 }
 
-/** オープンリダイレクトを防ぐ。配車さん内の絶対パスだけを許す */
+const RETURN_TO_BASE = "https://haisha-san.invalid";
+
+/**
+ * オープンリダイレクトを防ぐ。配車さん内の絶対パスだけを許す。
+ * URL の解釈ではタブ・改行が取り除かれ、"/\t/evil.example" が "//evil.example" になるので、
+ * 文字列の先頭だけで判定せず、制御文字を拒んだうえで実際に URL として解釈し、別のオリジンにならないことを確かめる。
+ * 返すのは正規化したパス（＋クエリ・ハッシュ）。
+ */
 export function safeReturnTo(value: string | null | undefined): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
+  // eslint-disable-next-line no-control-regex
+  if (!value || !value.startsWith("/") || /[\u0000-\u001F\u007F\\]/.test(value)) return "/";
+  let url: URL;
+  try {
+    url = new URL(value, RETURN_TO_BASE);
+  } catch {
     return "/";
   }
-  return value;
+  if (url.origin !== RETURN_TO_BASE) return "/";
+  return `${url.pathname}${url.search}${url.hash}`;
 }
