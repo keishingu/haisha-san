@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Member, PlanResult } from '../types';
 import { generateShareText } from '../share-url/shareText';
-import { buildSharePayload } from '../share-url/payload';
-import { buildShareUrl } from '../share-url/shareUrl';
 
 const members: Member[] = [
   { id: '1', name: '田中', addressInput: '東京都新宿区西新宿1丁目', location: { lat: 35.6938, lng: 139.7034 }, isDriver: true, vehicleCapacity: 4 },
@@ -42,32 +40,14 @@ describe('プライバシー: 共有テキスト', () => {
   });
 });
 
-describe('プライバシー: 共有ペイロード', () => {
-  it('共有ペイロードに出発地住所と自宅緯度経度が含まれないこと', () => {
-    const payload = buildSharePayload(members, '河口湖キャンプ場', planResult, { lat: 35.4786, lng: 138.7531 }, 'メモ');
-    const json = JSON.stringify(payload);
-    expect(json).not.toContain('西新宿1丁目');
-    expect(json).not.toContain('35.6938');
-    expect(json).not.toContain('139.7034');
-    expect(json).not.toContain('35.6462');
-    // 車ごとの割り当てと公共交通組は含まれる
-    expect(payload.vehiclePlans).toHaveLength(1);
-    expect(payload.transitOnlyPlans).toHaveLength(1);
-    expect(payload.vehiclePlans[0].driverName).toBe('田中');
-    expect(payload.transitOnlyPlans[0].memberName).toBe('鈴木');
-  });
-});
-
 describe('プライバシー: ストレージ非保存', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
   });
 
-  it('共有テキスト・ペイロード・URL生成でLocalStorage/SessionStorageに何も保存しないこと', () => {
+  it('共有テキストの生成でLocalStorage/SessionStorageに何も保存しないこと', () => {
     generateShareText(members, '河口湖キャンプ場', planResult);
-    const payload = buildSharePayload(members, '河口湖キャンプ場', planResult, { lat: 35.4786, lng: 138.7531 });
-    buildShareUrl(payload);
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
   });

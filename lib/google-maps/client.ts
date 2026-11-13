@@ -1,8 +1,6 @@
-import { LatLng, MeetingCandidate } from '../types';
+// ブラウザだけで使う Google Maps の機能（住所サジェスト用の Maps JavaScript API の読み込み）。
+// 住所解決・移動時間・集合地点の検索はサーバーで行う（lib/google-maps/server.ts）。
 
-// ── ブラウザ用キー（Maps JavaScript API = 住所サジェスト用）の有無 ──
-// サーバー用キー（GOOGLE_MAPS_API_KEY）はブラウザから参照できないため、
-// 実際の住所解決/距離計算が使えるか（live モードか）は getApiStatus() で確認する。
 export function isBrowserMapsKeyConfigured(): boolean {
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY;
   return !!key && key.length > 0;
@@ -11,18 +9,6 @@ export function isBrowserMapsKeyConfigured(): boolean {
 // 後方互換のためのエイリアス（サジェスト用ブラウザキーの有無）。
 export function isApiKeyConfigured(): boolean {
   return isBrowserMapsKeyConfigured();
-}
-
-// サーバー側 Google API（Route Handler）が利用可能かを確認する。
-export async function getApiStatus(): Promise<{ live: boolean }> {
-  try {
-    const res = await fetch('/api/status');
-    if (!res.ok) return { live: false };
-    const data = await res.json();
-    return { live: !!data.live };
-  } catch {
-    return { live: false };
-  }
 }
 
 let mapsApiLoading: Promise<void> | null = null;
@@ -62,7 +48,6 @@ export function loadMapsApi(): Promise<void> {
       return;
     }
 
-    // フォールバック: ローダーが無ければ動的に注入する。
     const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY;
     const script = document.createElement('script');
     script.id = 'gmaps-loader';
@@ -74,155 +59,4 @@ export function loadMapsApi(): Promise<void> {
   });
 
   return mapsApiLoading;
-}
-
-export type GeocodingResult = {
-  address: string;
-  location: LatLng;
-  formattedAddress: string;
-};
-
-export async function geocodeAddress(address: string): Promise<GeocodingResult> {
-  const res = await fetch('/api/geocode', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address }),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || '住所の特定に失敗しました。');
-  }
-
-  return {
-    address,
-    location: data.location,
-    formattedAddress: data.formattedAddress,
-  };
-}
-
-export type DistanceMatrixResult = {
-  durationMinutes: number;
-  distanceMeters: number;
-  status: 'OK' | 'error';
-};
-
-export async function getDistanceMatrix(
-  origins: LatLng[],
-  destinations: LatLng[]
-): Promise<DistanceMatrixResult[][]> {
-  const res = await fetch('/api/routes', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ origins, destinations }),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || '移動時間の取得に失敗しました。');
-  }
-
-  return data.rows.map((row: { durationMinutes: number; distanceMeters: number; status: string }[]) =>
-    row.map((elem) => ({
-      durationMinutes: elem.status === 'OK' ? elem.durationMinutes : -1,
-      distanceMeters: elem.distanceMeters,
-      status: elem.status === 'OK' ? 'OK' as const : 'error' as const,
-    }))
-  );
-}
-
-export type TransitRouteStep = {
-  line?: string;
-  departureStop: string;
-  arrivalStop: string;
-};
-
-export type TransitRouteResult = {
-  steps: TransitRouteStep[];
-  durationMinutes?: number;
-};
-
-// 車なしメンバーの集合地点までの公共交通経路（乗車駅→降車駅）を取得する。検証用途のみ。
-export async function getTransitRoute(origin: LatLng, destination: LatLng): Promise<TransitRouteResult> {
-  const res = await fetch('/api/transit', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ origin, destination }),
-  });
-
-  if (!res.ok) return { steps: [] };
-
-  const data = await res.json();
-  return { steps: data.steps || [], durationMinutes: data.durationMinutes };
-}
-
-function mapPlaceType(googleType: string): MeetingCandidate['placeType'] {
-  switch (googleType) {
-    case 'train_station':
-    case 'transit_station':
-      return 'station';
-    case 'parking':
-      return 'parking';
-    case 'convenience_store':
-      return 'convenience_store';
-    default:
-      return 'custom';
-  }
-}
-
-async function nearbySearch(
-  center: LatLng,
-  radius: number,
-  type: string
-): Promise<MeetingCandidate[]> {
-  const res = await fetch('/api/places', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lat: center.lat, lng: center.lng, radius, type }),
-  });
-
-  if (!res.ok) return [];
-
-  const data = await res.json();
-  return (data.results || []).map((r: { name: string; address: string; location: LatLng }, i: number) => ({
-    id: `place-${type}-${i}`,
-    name: r.name,
-    address: r.address,
-    location: r.location,
-    placeType: mapPlaceType(type),
-  }));
-}
-
-function haversineKm(a: LatLng, b: LatLng): number {
-  const R = 6371;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-}
-
-export async function searchMeetingCandidates(center: LatLng): Promise<MeetingCandidate[]> {
-  const searches = [
-    { type: 'train_station', radius: 15000 },
-    { type: 'transit_station', radius: 15000 },
-    { type: 'parking', radius: 8000 },
-  ];
-
-  const allResults: MeetingCandidate[] = [];
-  const seen = new Set<string>();
-
-  for (const search of searches) {
-    const results = await nearbySearch(center, search.radius, search.type);
-    for (const r of results) {
-      const key = `${r.location.lat.toFixed(4)},${r.location.lng.toFixed(4)}`;
-      if (!seen.has(key) && allResults.length < 10) {
-        seen.add(key);
-        allResults.push(r);
-      }
-    }
-  }
-
-  allResults.sort((a, b) => haversineKm(center, a.location) - haversineKm(center, b.location));
-
-  return allResults;
 }

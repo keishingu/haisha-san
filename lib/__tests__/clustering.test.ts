@@ -20,7 +20,7 @@ const farSharedCandidate: MeetingCandidate[] = [
 
 describe('割り当てフェーズのクラスタリング', () => {
   it('遠い共有候補があってもメンバーは近いドライバーへ割り当てられる（交差しない）', async () => {
-    const r = await calculateAssignment(members, destination, farSharedCandidate, false, 'balanced');
+    const r = await calculateAssignment(members, destination, farSharedCandidate, null, 'balanced');
     const carW = r.vehiclePlans.find((v) => v.driverId === 'dW')!;
     const carE = r.vehiclePlans.find((v) => v.driverId === 'dE')!;
     expect(carW.passengerIds).toContain('pW');
@@ -30,7 +30,7 @@ describe('割り当てフェーズのクラスタリング', () => {
   });
 
   it('定員を超える割り当ては生成されない', async () => {
-    const r = await calculateAssignment(members, destination, farSharedCandidate, false, 'balanced');
+    const r = await calculateAssignment(members, destination, farSharedCandidate, null, 'balanced');
     for (const vp of r.vehiclePlans) {
       const driver = members.find((m) => m.id === vp.driverId)!;
       expect(vp.passengerIds.length + 1).toBeLessThanOrEqual(driver.vehicleCapacity!);

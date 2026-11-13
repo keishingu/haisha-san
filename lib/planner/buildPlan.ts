@@ -1,17 +1,12 @@
 import { Member, Destination, LatLng, MeetingCandidate, PlanResult } from '../types';
 import { calculateAssignment } from './assignment';
 import { OptimizationMode, DEFAULT_OPTIMIZATION_MODE } from './optimization';
-import { getSampleLocation, getDynamicMeetingCandidates } from './sampleData';
-import {
-  getApiStatus,
-  geocodeAddress,
-  searchMeetingCandidates,
-} from '../google-maps/client';
+import type { MapsGateway } from '../google-maps/gateway';
 
 export type BuildPlanResult = {
   result: PlanResult;
-  resolvedMembers: Member[]; // location 解決済み（ブラウザメモリ上のみ）
-  destinationLocation: LatLng; // 解決済み目的地座標（ブラウザメモリ上のみ）
+  resolvedMembers: Member[]; // location 解決済み
+  destinationLocation: LatLng; // 解決済み目的地座標
   mode: 'live' | 'sample';
 };
 
@@ -25,35 +20,26 @@ function centroid(locations: LatLng[]): LatLng {
 async function resolveLocation(
   addressInput: string,
   existing: LatLng | undefined,
-  live: boolean
+  maps: MapsGateway
 ): Promise<LatLng | undefined> {
   if (existing) return existing;
-  if (live) {
-    try {
-      const r = await geocodeAddress(addressInput);
-      return r.location;
-    } catch {
-      // live でも失敗したらサンプル辞書にフォールバック
-      return getSampleLocation(addressInput);
-    }
-  }
-  return getSampleLocation(addressInput);
+  return maps.geocode(addressInput);
 }
 
 /**
  * 入力（メンバー・目的地）を解決し、割り当て結果を返す。
- * サーバー用APIキーがあれば Google Maps Platform を使い、無ければサンプル辞書で動作する。
- * 解決した住所・緯度経度はブラウザメモリ上だけで扱い、保存しない。
+ * 地図の機能は maps で渡す（Cairn の配車はサーバーで Google Maps Platform、サンプルモードは内蔵の辞書）。
  */
 export async function buildPlan(
   members: Member[],
   destination: Destination,
-  optimizationMode: OptimizationMode = DEFAULT_OPTIMIZATION_MODE
+  optimizationMode: OptimizationMode = DEFAULT_OPTIMIZATION_MODE,
+  maps: MapsGateway
 ): Promise<BuildPlanResult> {
-  const { live } = await getApiStatus();
+  const live = maps.live;
 
   // 目的地
-  const destLocation = await resolveLocation(destination.addressInput, destination.location, live);
+  const destLocation = await resolveLocation(destination.addressInput, destination.location, maps);
   if (!destLocation) {
     throw new Error(`目的地「${destination.addressInput}」を特定できませんでした。市区町村や番地を追加してください。`);
   }
@@ -63,15 +49,17 @@ export async function buildPlan(
   const unresolved: string[] = [];
   const meetingPointWarnings: string[] = [];
   for (const m of members) {
-    const loc = await resolveLocation(m.addressInput, m.location, live);
+    const loc = await resolveLocation(m.addressInput, m.location, maps);
     if (!loc) {
       unresolved.push(m.name || m.addressInput);
       continue;
     }
     const resolved: Member = { ...m, location: loc };
     // ドライバーの指定集合場所を解決する。特定できない場合は自動選定にフォールバックし、警告で知らせる。
-    if (m.isDriver && m.meetingPointInput?.trim()) {
-      const mpLoc = await resolveLocation(m.meetingPointInput, m.meetingPointLocation, live);
+    if (m.isDriver && m.meetingAtHome) {
+      resolved.meetingPointLocation = loc;
+    } else if (m.isDriver && m.meetingPointInput?.trim()) {
+      const mpLoc = await resolveLocation(m.meetingPointInput, m.meetingPointLocation, maps);
       if (mpLoc) {
         resolved.meetingPointLocation = mpLoc;
       } else {
@@ -93,30 +81,29 @@ export async function buildPlan(
   const searchCenter = nonDriverLocs.length > 0 ? centroid(nonDriverLocs) : destLocation;
 
   // 指定した中心の周辺で集合地点候補を返すプロバイダ。
-  // live なら Places、無ければ（またはゼロ件なら）内蔵の駅リストから生成する。
   // 車ごとに呼び出して、その車のメンバーに近い候補を取り直すために使う。
-  const candidateProvider = async (center: LatLng): Promise<MeetingCandidate[]> => {
-    if (live) {
-      try {
-        const r = await searchMeetingCandidates(center);
-        if (r.length > 0) return r;
-      } catch {
-        // フォールバックへ
-      }
-    }
-    return getDynamicMeetingCandidates(center);
-  };
+  const candidateProvider = (center: LatLng): Promise<MeetingCandidate[]> => maps.searchMeetingCandidates(center);
 
-  const candidates = await candidateProvider(searchCenter);
-  if (candidates.length === 0) {
-    throw new Error('集合地点候補が見つかりませんでした。メンバーの住所を確認してください。');
+  // 集合地点を探す必要があるのは、同乗者がいて、集合場所を決めていない（自宅・指定集合場所のない）ドライバーがいるときだけ。
+  // - 全員が運転する・誰も運転しない: 集合地点が要らない
+  // - 全ドライバーが集合場所を決めている: 割り当てはその場所を唯一の候補にする（buildMeetingOverride）
+  const drivers = resolvedMembers.filter(m => m.isDriver);
+  const needsSearch =
+    drivers.length > 0 &&
+    resolvedMembers.some(m => !m.isDriver) &&
+    drivers.some(d => !d.meetingPointLocation);
+  const candidates = needsSearch ? await candidateProvider(searchCenter) : [];
+  if (needsSearch && candidates.length === 0) {
+    throw new Error(
+      '集合地点候補が見つかりませんでした。メンバーの住所を確認するか、車を出す人の集合場所（自宅または指定集合場所）を決めてください。'
+    );
   }
 
   const result = await calculateAssignment(
     resolvedMembers,
     destLocation,
     candidates,
-    live,
+    maps.routes,
     optimizationMode,
     candidateProvider
   );

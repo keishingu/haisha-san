@@ -32,3 +32,6 @@ next-env.d.ts
 *.njsproj
 *.sln
 *.sw?
+
+# ローカル開発用の PGlite
+/.pglite

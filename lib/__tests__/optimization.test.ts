@@ -29,25 +29,25 @@ function passengerAccessOf(planResult: Awaited<ReturnType<typeof calculateAssign
 
 describe('最適化モードによる集合地点の選択', () => {
   it('集合のしやすさ重視ではメンバーに近い集合地点が選ばれること', async () => {
-    const result = await calculateAssignment(members, destination, candidates, false, 'gathering');
+    const result = await calculateAssignment(members, destination, candidates, null, 'gathering');
     const vp = result.vehiclePlans.find((v) => v.passengerIds.includes('p'))!;
     expect(vp.meetingPoint?.id).toBe('near-passenger');
   });
 
   it('ドライバー負担重視ではドライバーの進路上の集合地点が選ばれること', async () => {
-    const result = await calculateAssignment(members, destination, candidates, false, 'driver');
+    const result = await calculateAssignment(members, destination, candidates, null, 'driver');
     const vp = result.vehiclePlans.find((v) => v.passengerIds.includes('p'))!;
     expect(vp.meetingPoint?.id).toBe('near-route');
   });
 
   it('集合のしやすさ重視のほうが集合時間が短くなること', async () => {
-    const gathering = await calculateAssignment(members, destination, candidates, false, 'gathering');
-    const driverMode = await calculateAssignment(members, destination, candidates, false, 'driver');
+    const gathering = await calculateAssignment(members, destination, candidates, null, 'gathering');
+    const driverMode = await calculateAssignment(members, destination, candidates, null, 'driver');
     expect(passengerAccessOf(gathering)).toBeLessThan(passengerAccessOf(driverMode));
   });
 
   it('モード未指定（既定=バランス）でも割り当てが成立すること', async () => {
-    const result = await calculateAssignment(members, destination, candidates, false);
+    const result = await calculateAssignment(members, destination, candidates, null);
     expect(result.vehiclePlans.some((v) => v.passengerIds.includes('p'))).toBe(true);
   });
 });
