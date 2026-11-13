@@ -8,6 +8,7 @@ import { CairnError } from "@/lib/cairn/errors";
 import { INITIAL_ADMIN_ENV_KEY, readInitialAdminIds } from "./env";
 import type { LoginErrorCode } from "./login-errors";
 import { countActiveKakari, findActiveWorkspaceMember, roleOnLogin } from "./membership";
+import { recordLogin } from "./record-login";
 import { setSession } from "./session";
 
 export type LoginResult = { ok: true } | { ok: false; error: LoginErrorCode; cause?: unknown };
@@ -69,13 +70,7 @@ export async function completeLogin(input: {
   // 開発用ログインではメールアドレスが分からないので、既存の値を消さない
   const email = input.email ?? existing?.email ?? null;
 
-  await db
-    .insert(members)
-    .values({ cairnUserId: input.sub, role, email, lastLoginAt: now })
-    .onConflictDoUpdate({
-      target: members.cairnUserId,
-      set: { role, email, lastLoginAt: now },
-    });
+  await recordLogin(db, { sub: input.sub, role, existingRole: existing?.role ?? null, email, now });
 
   await setSession({ sub: input.sub, via: input.via });
   return { ok: true };
