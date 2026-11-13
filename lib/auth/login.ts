@@ -1,13 +1,13 @@
 import "server-only";
 
-import { count, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { members } from "@/db/schema";
 import { listAllWorkspaceMembers } from "@/lib/cairn/client";
 import { CairnError } from "@/lib/cairn/errors";
 import { INITIAL_ADMIN_ENV_KEY, readInitialAdminIds } from "./env";
 import type { LoginErrorCode } from "./login-errors";
-import { findActiveWorkspaceMember, roleOnLogin } from "./membership";
+import { countActiveKakari, findActiveWorkspaceMember, roleOnLogin } from "./membership";
 import { setSession } from "./session";
 
 export type LoginResult = { ok: true } | { ok: false; error: LoginErrorCode; cause?: unknown };
@@ -41,10 +41,14 @@ export async function completeLogin(input: {
     .select({ role: members.role, email: members.email })
     .from(members)
     .where(eq(members.cairnUserId, input.sub));
-  const [{ kakariCount }] = await db
-    .select({ kakariCount: count() })
+  const kakariRows = await db
+    .select({ cairnUserId: members.cairnUserId })
     .from(members)
     .where(eq(members.role, "kakari"));
+  const kakariCount = countActiveKakari(
+    kakariRows.map((r) => r.cairnUserId),
+    workspaceMembers,
+  );
 
   // 設定が間違っていても、有効な項目は使い、既存の部員はそのまま入れる（設定の打ち間違いで全員を締め出さない）。
   // ただし配車係が1人もいないときは、設定の間違いが原因で誰も配車係になれない可能性が高いので、

@@ -77,6 +77,13 @@ describe("配車係の付け外し", () => {
     expect(await roleOf("kakari")).toBe("kakari");
   });
 
+  test("ワークスペースから外れた配車係は数えないので、在籍中の最後の1人は外せない", async () => {
+    await seedMember(db, "gone", "kakari");
+    await expect(
+      changeMemberRole(db, { actorId: "kakari", targetCairnUserId: "kakari", newRole: "member", workspaceMembers: workspace }),
+    ).rejects.toThrow("配車係が1人もいなくなるため、外せません");
+  });
+
   test("部員は役割を変更できない", async () => {
     await seedMember(db, "a", "member");
     await expect(

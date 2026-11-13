@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, test } from "vitest";
-import { checkRoleChange, findActiveWorkspaceMember, roleOnLogin } from "./membership";
+import { checkRoleChange, countActiveKakari, findActiveWorkspaceMember, roleOnLogin } from "./membership";
 
 const workspace = [
   { userId: "u1", name: "A", membershipStatus: "active", profileAttributes: [] },
@@ -60,5 +60,16 @@ describe("配車係の付け外し", () => {
 
   test("配車係が2人以上なら外せる", () => {
     expect(checkRoleChange({ actorRole: "kakari", targetCurrentRole: "kakari", newRole: "member", kakariCount: 2 }).ok).toBe(true);
+  });
+});
+
+describe("countActiveKakari", () => {
+  test("ワークスペースから外れた配車係は数えない", () => {
+    const workspace = [
+      { userId: "a", name: "A", membershipStatus: "active", profileAttributes: [] },
+      { userId: "b", name: "B", membershipStatus: "inactive", profileAttributes: [] },
+    ];
+    expect(countActiveKakari(["a", "b", "c"], workspace)).toBe(1);
+    expect(countActiveKakari(["b", "c"], workspace)).toBe(0);
   });
 });

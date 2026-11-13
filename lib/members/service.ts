@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { members } from "@/db/schema";
 import type { Executor } from "@/db/types";
-import { checkRoleChange, findActiveWorkspaceMember, type MemberRole } from "@/lib/auth/membership";
+import { checkRoleChange, countActiveKakari, findActiveWorkspaceMember, type MemberRole } from "@/lib/auth/membership";
 import type { CairnWorkspaceMember } from "@/lib/cairn/schemas";
 import { DomainError } from "@/lib/errors";
 
@@ -90,7 +90,10 @@ export async function changeMemberRole(
       actorRole: actor.role,
       targetCurrentRole,
       newRole: input.newRole,
-      kakariCount: kakari.length,
+      kakariCount: countActiveKakari(
+        kakari.map((k) => k.cairnUserId),
+        input.workspaceMembers,
+      ),
     });
     if (!check.ok) throw new DomainError(check.reason);
 
