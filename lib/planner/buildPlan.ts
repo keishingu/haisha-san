@@ -84,11 +84,19 @@ export async function buildPlan(
   // 車ごとに呼び出して、その車のメンバーに近い候補を取り直すために使う。
   const candidateProvider = (center: LatLng): Promise<MeetingCandidate[]> => maps.searchMeetingCandidates(center);
 
-  // 全員が運転する・誰も運転しないときは集合地点が要らないので、検索しない（候補が無くてもプランを作れる）
-  const needsMeetingPoint = resolvedMembers.some(m => m.isDriver) && resolvedMembers.some(m => !m.isDriver);
-  const candidates = needsMeetingPoint ? await candidateProvider(searchCenter) : [];
-  if (needsMeetingPoint && candidates.length === 0) {
-    throw new Error('集合地点候補が見つかりませんでした。メンバーの住所を確認してください。');
+  // 集合地点を探す必要があるのは、同乗者がいて、集合場所を決めていない（自宅・指定集合場所のない）ドライバーがいるときだけ。
+  // - 全員が運転する・誰も運転しない: 集合地点が要らない
+  // - 全ドライバーが集合場所を決めている: 割り当てはその場所を唯一の候補にする（buildMeetingOverride）
+  const drivers = resolvedMembers.filter(m => m.isDriver);
+  const needsSearch =
+    drivers.length > 0 &&
+    resolvedMembers.some(m => !m.isDriver) &&
+    drivers.some(d => !d.meetingPointLocation);
+  const candidates = needsSearch ? await candidateProvider(searchCenter) : [];
+  if (needsSearch && candidates.length === 0) {
+    throw new Error(
+      '集合地点候補が見つかりませんでした。メンバーの住所を確認するか、車を出す人の集合場所（自宅または指定集合場所）を決めてください。'
+    );
   }
 
   const result = await calculateAssignment(

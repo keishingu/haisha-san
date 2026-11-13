@@ -28,6 +28,15 @@ describe('buildPlan: 集合地点の検索', () => {
     expect(result.transitOnlyPlans).toHaveLength(2);
   });
 
+  it('全ドライバーが集合場所を決めていれば検索せず、その場所でプランを作ること', async () => {
+    const maps = noCandidates();
+    const home: Member = { ...driver('a', '東京都杉並区'), meetingAtHome: true, meetingPointInput: 'aさんの自宅' };
+    const { result } = await buildPlan([home, rider('b', '東京都中野区')], { addressInput: '河口湖' }, 'balanced', maps);
+    expect(maps.searchMeetingCandidates).not.toHaveBeenCalled();
+    expect(result.vehiclePlans[0].passengerIds).toEqual(['b']);
+    expect(result.vehiclePlans[0].meetingPoint?.name).toBe('aさんの自宅');
+  });
+
   it('同乗者がいて候補が見つからなければエラーにすること', async () => {
     await expect(
       buildPlan([driver('a', '東京都杉並区'), rider('b', '東京都中野区')], { addressInput: '河口湖' }, 'balanced', noCandidates()),
