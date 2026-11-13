@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { startTransition, useActionState, useState } from 'react';
 import AutocompleteInput from '@/components/AutocompleteInput';
 import { saveOriginAction, type OriginFormState } from '@/app/(app)/origin-actions';
 
@@ -15,9 +15,18 @@ export function OriginForm({ cairnUserId, initial }: { cairnUserId: string; init
   const [state, action, pending] = useActionState<OriginFormState, FormData>(saveOriginAction, { ok: false, message: null });
   const [address, setAddress] = useState(initial?.addressInput ?? '');
   const [canDrive, setCanDrive] = useState(initial?.canDrive ?? false);
+  const [capacity, setCapacity] = useState(initial?.vehicleCapacity != null ? String(initial.vehicleCapacity) : '');
 
   return (
-    <form action={action} className="flex flex-col gap-4 rounded-lg bg-white p-4 shadow-md">
+    // form の action に渡すと、送信後に React が入力を初期値へ戻す（失敗したときも）。
+    // チェックと定員の欄が食い違わないよう、onSubmit から送り、入力はすべて state で持つ
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const formData = new FormData(e.currentTarget);
+        startTransition(() => action(formData));
+      }}
+      className="flex flex-col gap-4 rounded-lg bg-white p-4 shadow-md">
       <input type="hidden" name="cairnUserId" value={cairnUserId} />
       <label className="flex flex-col gap-1">
         <span className="text-sm font-bold text-gray-700">出発地の住所</span>
@@ -33,8 +42,7 @@ export function OriginForm({ cairnUserId, initial }: { cairnUserId: string; init
       </label>
       <div className="flex flex-wrap items-center gap-4">
         <label className="flex items-center gap-2">
-          {/* 送信後のフォームのリセットでチェックだけ外れて見えないよう、非制御にして初期値（保存済みの値）に戻す */}
-          <input type="checkbox" name="canDrive" defaultChecked={initial?.canDrive ?? false} onChange={(e) => setCanDrive(e.target.checked)} />
+          <input type="checkbox" name="canDrive" checked={canDrive} onChange={(e) => setCanDrive(e.target.checked)} />
           <span className="text-sm text-gray-700">車を出せる</span>
         </label>
         {canDrive && (
@@ -45,7 +53,8 @@ export function OriginForm({ cairnUserId, initial }: { cairnUserId: string; init
               name="vehicleCapacity"
               min={1}
               max={15}
-              defaultValue={initial?.vehicleCapacity ?? ''}
+              value={capacity}
+              onChange={(e) => setCapacity(e.target.value)}
               className="w-16 rounded border border-gray-300 p-1 text-center"
             />
             <span className="text-sm text-gray-500">人（運転する人を含む）</span>
